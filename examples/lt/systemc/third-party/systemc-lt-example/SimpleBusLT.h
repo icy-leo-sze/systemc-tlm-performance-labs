@@ -23,6 +23,15 @@
 //#include <systemc>
 #include "tlm.h"
 
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <mutex>
+#include <system_error>
+
 #include "tlm_utils/simple_target_socket.h"
 #include "tlm_utils/simple_initiator_socket.h"
 
@@ -92,17 +101,25 @@ public:
   // LT protocol
   // - forward each call to the target/initiator
   //
-  void initiatorBTransport(int /*SocketId*/,
+  void initiatorBTransport(int SocketId,
                            transaction_type& trans,
                            sc_core::sc_time& t)
   {
     initiator_socket_type* decodeSocket;
-    unsigned int portId = decode(trans.get_address());
+    sc_dt::uint64 originalAddress = trans.get_address();
+    double startTimeNs = sc_core::sc_time_stamp().to_seconds() * 1e9;
+    sc_core::sc_time beforeDelay = t;
+    unsigned int portId = decode(originalAddress);
     assert(portId < NR_OF_TARGETS);
     decodeSocket = &initiator_socket[portId];
     trans.set_address(trans.get_address() & getAddressMask(portId));
 
     (*decodeSocket)->b_transport(trans, t);
+
+    sc_core::sc_time afterDelay = t;
+    sc_core::sc_time transactionDelay = afterDelay - beforeDelay;
+    writeLatencyTrace(SocketId, portId, trans, originalAddress, startTimeNs,
+                      transactionDelay);
   }
 
   unsigned int transportDebug(int /*SocketId*/,
@@ -186,6 +203,152 @@ public:
     for (unsigned int i = 0; i < NR_OF_INITIATORS; ++i) {
       (target_socket[i])->invalidate_direct_mem_ptr(start_range, end_range);
     }
+  }
+
+private:
+  static int mapInitiatorId(int socketId)
+  {
+    switch (socketId) {
+      case 0:
+        return 101;
+      case 1:
+        return 102;
+      case 2:
+        return 9002;
+      default:
+        return -1;
+    }
+  }
+
+  static int mapTargetId(unsigned int portId)
+  {
+    switch (portId) {
+      case 0:
+        return 201;
+      case 1:
+        return 202;
+      default:
+        return -1;
+    }
+  }
+
+  static const char* commandToString(tlm::tlm_command command)
+  {
+    switch (command) {
+      case tlm::TLM_READ_COMMAND:
+        return "READ";
+      case tlm::TLM_WRITE_COMMAND:
+        return "WRITE";
+      default:
+        return "OTHER";
+    }
+  }
+
+  static std::uint32_t payloadDataWord(transaction_type& trans)
+  {
+    std::uint32_t data = 0;
+    if (trans.get_data_ptr() && trans.get_data_length() >= sizeof(data)) {
+      std::memcpy(&data, trans.get_data_ptr(), sizeof(data));
+    }
+    return data;
+  }
+
+  static std::mutex& latencyTraceMutex()
+  {
+    static std::mutex mutex;
+    return mutex;
+  }
+
+  static std::filesystem::path latencyTracePath()
+  {
+    static const std::filesystem::path path = [] {
+      std::error_code error;
+      std::filesystem::path executablePath =
+          std::filesystem::read_symlink("/proc/self/exe", error);
+      if (error) {
+        std::cerr << "[latency_csv] failed to resolve /proc/self/exe: "
+                  << error.message() << std::endl;
+        return std::filesystem::path();
+      }
+
+      return executablePath.parent_path().parent_path() / "results" /
+             "latency_trace.csv";
+    }();
+
+    return path;
+  }
+
+  static bool fileHasContent(const std::filesystem::path& path)
+  {
+    std::error_code error;
+    if (!std::filesystem::exists(path, error) || error) {
+      return false;
+    }
+
+    const auto size = std::filesystem::file_size(path, error);
+    return !error && size > 0;
+  }
+
+  static bool ensureLatencyTraceDirectory(const std::filesystem::path& tracePath)
+  {
+    std::error_code error;
+    std::filesystem::create_directories(tracePath.parent_path(), error);
+    if (error) {
+      std::cerr << "[latency_csv] failed to create directory "
+                << tracePath.parent_path() << ": " << error.message()
+                << std::endl;
+      return false;
+    }
+
+    return true;
+  }
+
+  static void writeLatencyTrace(int socketId,
+                                unsigned int portId,
+                                transaction_type& trans,
+                                sc_dt::uint64 originalAddress,
+                                double startTimeNs,
+                                sc_core::sc_time transactionDelay)
+  {
+    std::lock_guard<std::mutex> lock(latencyTraceMutex());
+    const std::filesystem::path tracePath = latencyTracePath();
+    if (tracePath.empty() || !ensureLatencyTraceDirectory(tracePath)) {
+      return;
+    }
+
+    bool writeHeader = !fileHasContent(tracePath);
+    std::ofstream trace(tracePath, std::ios::out | std::ios::app);
+    if (!trace) {
+      std::cerr << "[latency_csv] failed to open " << tracePath << std::endl;
+      return;
+    }
+
+    static bool pathAnnounced = false;
+    if (!pathAnnounced) {
+      std::cerr << "[latency_csv] writing to " << tracePath << std::endl;
+      pathAnnounced = true;
+    }
+
+    if (writeHeader) {
+      trace << "initiator_id,target_id,command,address,data,start_time_ns,"
+               "delay_ns,end_time_ns\n";
+    }
+
+    double delayNs = transactionDelay.to_seconds() * 1e9;
+    double endTimeNs = startTimeNs + delayNs;
+
+    trace << mapInitiatorId(socketId) << ','
+          << mapTargetId(portId) << ','
+          << commandToString(trans.get_command()) << ','
+          << "0x" << std::uppercase << std::hex << std::setw(16)
+          << std::setfill('0') << static_cast<unsigned long long>(originalAddress)
+          << ','
+          << "0x" << std::uppercase << std::hex << std::setw(8)
+          << std::setfill('0') << payloadDataWord(trans) << ','
+          << std::dec << std::setfill(' ') << std::fixed << std::setprecision(3)
+          << startTimeNs << ','
+          << delayNs << ','
+          << endTimeNs << '\n';
   }
 
 };

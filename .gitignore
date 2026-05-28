@@ -8,3 +8,9 @@ tags
 artifacts
 .cache
 compile_commands.json
+
+# Local lt performance lab artifacts
+examples/lt/results/
+examples/lt.backup.*/
+logs/
+**/._*
