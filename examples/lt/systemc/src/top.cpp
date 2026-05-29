@@ -18,17 +18,201 @@
  *****************************************************************************/
 #include "top.h"
 
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <string>
+#include <system_error>
+
 namespace {
+typedef std::map<std::string, std::string> config_map;
+
+std::string trim(const std::string& value) {
+  const std::string whitespace = " \t\r\n";
+  const std::string::size_type begin = value.find_first_not_of(whitespace);
+  if (begin == std::string::npos) {
+    return "";
+  }
+
+  const std::string::size_type end = value.find_last_not_of(whitespace);
+  return value.substr(begin, end - begin + 1);
+}
+
+std::filesystem::path workloadConfigPath() {
+  std::error_code error;
+  std::filesystem::path executablePath =
+      std::filesystem::read_symlink("/proc/self/exe", error);
+  if (error) {
+    return std::filesystem::path();
+  }
+
+  return executablePath.parent_path().parent_path() / "results" /
+         "workload_config.env";
+}
+
+config_map readWorkloadConfigFile() {
+  config_map values;
+  const std::filesystem::path path = workloadConfigPath();
+  if (path.empty()) {
+    return values;
+  }
+
+  std::error_code error;
+  if (!std::filesystem::exists(path, error) || error) {
+    return values;
+  }
+
+  std::ifstream config(path);
+  if (!config) {
+    std::cerr << "[workload_config] failed to open " << path << std::endl;
+    return values;
+  }
+
+  std::string line;
+  while (std::getline(config, line)) {
+    const std::string stripped = trim(line);
+    if (stripped.empty() || stripped[0] == '#') {
+      continue;
+    }
+
+    const std::string::size_type separator = stripped.find('=');
+    if (separator == std::string::npos) {
+      continue;
+    }
+
+    values[trim(stripped.substr(0, separator))] =
+        trim(stripped.substr(separator + 1));
+  }
+
+  std::cerr << "[workload_config] loaded " << path << std::endl;
+  return values;
+}
+
+const config_map& workloadConfigValues() {
+  static const config_map values = readWorkloadConfigFile();
+  return values;
+}
+
+std::string workloadSetting(const char *name) {
+  const char *environmentValue = std::getenv(name);
+  if (environmentValue != nullptr && *environmentValue != '\0') {
+    return environmentValue;
+  }
+
+  const config_map& values = workloadConfigValues();
+  const config_map::const_iterator it = values.find(name);
+  if (it == values.end()) {
+    return "";
+  }
+
+  return it->second;
+}
+
+unsigned int envUnsigned(const char *name, unsigned int fallback) {
+  const std::string value = workloadSetting(name);
+  if (value.empty()) {
+    return fallback;
+  }
+
+  char *end = nullptr;
+  unsigned long parsed = std::strtoul(value.c_str(), &end, 0);
+  if (end == value.c_str()) {
+    return fallback;
+  }
+
+  return static_cast<unsigned int>(parsed);
+}
+
+bool envBool(const char *name, bool fallback) {
+  const std::string value = workloadSetting(name);
+  if (value.empty()) {
+    return fallback;
+  }
+
+  if (value == "0" || value == "false" || value == "FALSE" ||
+      value == "no" || value == "NO" || value == "off" || value == "OFF") {
+    return false;
+  }
+
+  return true;
+}
+
+traffic_generator::target_pattern envTargetPattern(
+    traffic_generator::target_pattern fallback) {
+  const std::string value = workloadSetting("LT_TARGET_PATTERN");
+  if (value.empty()) {
+    return fallback;
+  }
+
+  if (value == "target201") {
+    return traffic_generator::target_pattern::target201_only;
+  }
+  if (value == "target202") {
+    return traffic_generator::target_pattern::target202_only;
+  }
+  if (value == "both" || value == "current_default") {
+    return traffic_generator::target_pattern::current_default;
+  }
+
+  return fallback;
+}
+
+const char* traceTargetPatternName(traffic_generator::target_pattern pattern) {
+  switch (pattern) {
+    case traffic_generator::target_pattern::target201_only:
+      return "target201_only";
+    case traffic_generator::target_pattern::target202_only:
+      return "target202_only";
+    case traffic_generator::target_pattern::alternate_201_202:
+      return "alternate_201_202";
+    case traffic_generator::target_pattern::current_default:
+      return "current_default";
+  }
+
+  return "unknown";
+}
+
+struct workload_settings {
+  unsigned int transaction_count;
+  unsigned int address_stride;
+  traffic_generator::target_pattern target_pattern_mode;
+  bool enable_initiator_101;
+  bool enable_initiator_102;
+};
+
+const workload_settings& getWorkloadSettings() {
+  static const workload_settings settings = {
+      envUnsigned("LT_BURST_COUNT", 64),
+      envUnsigned("LT_ADDRESS_STRIDE", 4),
+      envTargetPattern(traffic_generator::target_pattern::current_default),
+      envBool("LT_ENABLE_INITIATOR_101", true),
+      envBool("LT_ENABLE_INITIATOR_102", true),
+  };
+
+  return settings;
+}
+
 traffic_generator::workload_config make_workload_config(
-    sc_core::sc_time initiator_start_offset) {
+    unsigned int initiator_id, sc_core::sc_time initiator_start_offset) {
+  const workload_settings& settings = getWorkloadSettings();
   traffic_generator::workload_config config;
-  config.transaction_count = 64;
-  config.address_stride = 4;
-  config.target_pattern_mode =
-      traffic_generator::target_pattern::current_default;
+  config.transaction_count = settings.transaction_count;
+  config.address_stride = settings.address_stride;
+  config.target_pattern_mode = settings.target_pattern_mode;
   config.read_write_mode_setting =
       traffic_generator::read_write_mode::write_then_read;
   config.initiator_start_offset = initiator_start_offset;
+
+  if (initiator_id == 101 && !settings.enable_initiator_101) {
+    config.transaction_count = 0;
+  }
+  if (initiator_id == 102 && !settings.enable_initiator_102) {
+    config.transaction_count = 0;
+  }
+
   return config;
 }
 } // namespace
@@ -45,11 +229,18 @@ top::top(sc_core::sc_module_name name, const char *address, const char *port)
                     sc_core::sc_time(30, sc_core::SC_NS)),
       m_initiator_1("m_initiator_1", 101, 0x0000000000000000,
                     0x0000000010000000,
-                    make_workload_config(sc_core::SC_ZERO_TIME)),
+                    make_workload_config(101, sc_core::SC_ZERO_TIME)),
       m_initiator_2("m_initiator_2", 102, 0x0000000000000000,
                     0x0000000010000000,
-                    make_workload_config(sc_core::SC_ZERO_TIME)),
+                    make_workload_config(102, sc_core::SC_ZERO_TIME)),
       m_renode_bridge("m_renode_bridge", address, port) {
+  const workload_settings& settings = getWorkloadSettings();
+  m_bus.setWorkloadTraceConfig(settings.transaction_count,
+                               settings.address_stride,
+                               traceTargetPatternName(settings.target_pattern_mode),
+                               settings.enable_initiator_101,
+                               settings.enable_initiator_102);
+
   m_initiator_1.top_initiator_socket(m_bus.target_socket[0]);
   m_initiator_2.top_initiator_socket(m_bus.target_socket[1]);
 

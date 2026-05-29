@@ -61,13 +61,27 @@ DEDUP_IDENTICAL_FIELDS = (
     "target_service_delay_ns",
     "total_delay_ns",
     "target_busy_until_ns",
+    "workload_transaction_count",
+    "workload_address_stride",
+    "workload_target_pattern",
+    "workload_enable_initiator_101",
+    "workload_enable_initiator_102",
 )
 WORKLOAD_FIELDS = (
-    "transaction_count",
-    "address_stride",
-    "target_pattern",
-    "read_write_mode",
-    "initiator_start_offset_ns",
+    "workload_transaction_count",
+    "workload_address_stride",
+    "workload_target_pattern",
+    "workload_enable_initiator_101",
+    "workload_enable_initiator_102",
+)
+SUMMARY_FIELDS = (
+    "total_transactions",
+    "avg_delay_ns",
+    "max_delay_ns",
+    "avg_queue_delay_ns",
+    "max_queue_delay_ns",
+    "contention_ratio_pct",
+    "avg_target_service_delay_ns",
 )
 
 
@@ -119,6 +133,16 @@ def parse_args():
         "--dedup-identical",
         action="store_true",
         help="Remove fully identical transaction rows before filtering and reporting.",
+    )
+    parser.add_argument(
+        "--summary-csv-output",
+        type=Path,
+        help="Write a one-row machine-readable summary CSV to this path.",
+    )
+    parser.add_argument(
+        "--fail-on-sanity",
+        action="store_true",
+        help="Exit with a non-zero status if any sanity check fails.",
     )
     return parser.parse_args()
 
@@ -401,6 +425,30 @@ def print_contention_summary(rows):
     )
 
 
+def summary_metrics(rows):
+    delays = metric_values(rows, "delay_ns")
+    queue_delays = metric_values(rows, "queue_delay_ns")
+    service_delays = metric_values(rows, "target_service_delay_ns")
+
+    return {
+        "total_transactions": len(rows),
+        "avg_delay_ns": format_number(average(delays)),
+        "max_delay_ns": format_number(max(delays) if delays else None),
+        "avg_queue_delay_ns": format_number(average(queue_delays)),
+        "max_queue_delay_ns": format_number(max(queue_delays) if queue_delays else None),
+        "contention_ratio_pct": format_number(contention_ratio(rows)),
+        "avg_target_service_delay_ns": format_number(average(service_delays)),
+    }
+
+
+def write_summary_csv(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=SUMMARY_FIELDS)
+        writer.writeheader()
+        writer.writerow(summary_metrics(rows))
+
+
 def print_workload_config_hint(rows):
     present_fields = [field for field in WORKLOAD_FIELDS if rows and field in rows[0]]
     if not present_fields:
@@ -557,11 +605,15 @@ def print_sanity_checks(rows):
         ),
     )
 
+    failure_count = 0
     for title, failing_rows in checks:
         if failing_rows:
+            failure_count += len(failing_rows)
             print_sanity_block(title, failing_rows)
         else:
             print_table(title, ("status",), (("OK",),))
+
+    return failure_count
 
 
 def timeline_row(row):
@@ -632,6 +684,9 @@ def main():
 
     sorted_rows = sorted(rows, key=timeline_sort_key)
 
+    if args.summary_csv_output:
+        write_summary_csv(args.summary_csv_output, rows)
+
     print(f"Trace: {args.trace}")
     print_overview(rows, len(raw_rows), len(analyzed_rows), deduplicated_count, filters)
     print_workload_config_hint(rows)
@@ -694,9 +749,16 @@ def main():
     print_table("By decoded_port", ("decoded_port", "count"), count_by(rows, "decoded_port"))
     print_address_range_summary(rows)
     print_data_length_summary(rows)
-    print_sanity_checks(rows)
+    sanity_failure_count = print_sanity_checks(rows)
     print_timeline(sorted_rows[:10], "First 10 Timeline Rows")
     print_timeline(sorted_rows[-10:], "Last 10 Timeline Rows")
+
+    if args.fail_on_sanity and sanity_failure_count:
+        print(
+            f"error: sanity checks failed with {sanity_failure_count} failing row checks",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

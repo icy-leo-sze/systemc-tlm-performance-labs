@@ -53,7 +53,12 @@ public:
 public:
   SC_HAS_PROCESS(SimpleBusLT);
   SimpleBusLT(sc_core::sc_module_name name) :
-    sc_core::sc_module(name)
+    sc_core::sc_module(name),
+    m_workload_transaction_count(64),
+    m_workload_address_stride(4),
+    m_workload_target_pattern("current_default"),
+    m_workload_enable_initiator_101(true),
+    m_workload_enable_initiator_102(true)
   {
     for (unsigned int i = 0; i < NR_OF_INITIATORS; ++i) {
       target_socket[i].register_b_transport(this, &SimpleBusLT::initiatorBTransport, i);
@@ -64,6 +69,19 @@ public:
       initiator_socket[i].register_invalidate_direct_mem_ptr(this, &SimpleBusLT::invalidateDMIPointers, i);
       m_target_busy_until[i] = sc_core::SC_ZERO_TIME;
     }
+  }
+
+  void setWorkloadTraceConfig(unsigned int transactionCount,
+                              sc_dt::uint64 addressStride,
+                              const std::string& targetPattern,
+                              bool enableInitiator101,
+                              bool enableInitiator102)
+  {
+    m_workload_transaction_count = transactionCount;
+    m_workload_address_stride = addressStride;
+    m_workload_target_pattern = targetPattern;
+    m_workload_enable_initiator_101 = enableInitiator101;
+    m_workload_enable_initiator_102 = enableInitiator102;
   }
 
   //
@@ -224,6 +242,11 @@ public:
 
 private:
   sc_core::sc_time m_target_busy_until[NR_OF_TARGETS];
+  unsigned int m_workload_transaction_count;
+  sc_dt::uint64 m_workload_address_stride;
+  std::string m_workload_target_pattern;
+  bool m_workload_enable_initiator_101;
+  bool m_workload_enable_initiator_102;
 
   static int mapInitiatorId(int socketId)
   {
@@ -302,7 +325,10 @@ private:
     return "initiator_id,target_id,command,address,data,start_time_ns,"
            "delay_ns,end_time_ns,decoded_port,masked_address,data_length,"
            "response_status,request_time_ns,bus_grant_time_ns,queue_delay_ns,"
-           "target_service_delay_ns,total_delay_ns,target_busy_until_ns";
+           "target_service_delay_ns,total_delay_ns,target_busy_until_ns,"
+           "workload_transaction_count,workload_address_stride,"
+           "workload_target_pattern,workload_enable_initiator_101,"
+           "workload_enable_initiator_102";
   }
 
   static bool checkLatencyTraceHeader(const std::filesystem::path& path,
@@ -348,18 +374,18 @@ private:
     return true;
   }
 
-  static void writeLatencyTrace(int socketId,
-                                unsigned int portId,
-                                transaction_type& trans,
-                                sc_dt::uint64 originalAddress,
-                                sc_dt::uint64 maskedAddress,
-                                double startTimeNs,
-                                sc_core::sc_time transactionDelay,
-                                sc_core::sc_time requestTime,
-                                sc_core::sc_time grantTime,
-                                sc_core::sc_time queueDelay,
-                                sc_core::sc_time targetServiceDelay,
-                                sc_core::sc_time targetBusyUntil)
+  void writeLatencyTrace(int socketId,
+                         unsigned int portId,
+                         transaction_type& trans,
+                         sc_dt::uint64 originalAddress,
+                         sc_dt::uint64 maskedAddress,
+                         double startTimeNs,
+                         sc_core::sc_time transactionDelay,
+                         sc_core::sc_time requestTime,
+                         sc_core::sc_time grantTime,
+                         sc_core::sc_time queueDelay,
+                         sc_core::sc_time targetServiceDelay,
+                         sc_core::sc_time targetBusyUntil)
   {
     std::lock_guard<std::mutex> lock(latencyTraceMutex());
     const std::filesystem::path tracePath = latencyTracePath();
@@ -420,7 +446,12 @@ private:
           << queueDelayNs << ','
           << targetServiceDelayNs << ','
           << delayNs << ','
-          << targetBusyUntilNs << '\n';
+          << targetBusyUntilNs << ','
+          << m_workload_transaction_count << ','
+          << m_workload_address_stride << ','
+          << m_workload_target_pattern << ','
+          << (m_workload_enable_initiator_101 ? 1 : 0) << ','
+          << (m_workload_enable_initiator_102 ? 1 : 0) << '\n';
   }
 
 };
