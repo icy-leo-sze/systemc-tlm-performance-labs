@@ -66,6 +66,20 @@ cmake --build build/examples/at
 The trace is written to the current working directory of the `at` executable.
 When using the commands above, that is the repository root.
 
+## Analyze Phase Trace
+
+Use the analyzer to rebuild each transaction timeline from `phase_trace.csv`:
+
+```bash
+python3 examples/at/tools/analyze_phase_trace.py --trace phase_trace.csv
+python3 examples/at/tools/analyze_phase_trace.py --trace phase_trace.csv --fail-on-sanity
+python3 examples/at/tools/analyze_phase_trace.py --trace phase_trace.csv --summary-csv-output /tmp/at_summary.csv
+python3 examples/at/tools/analyze_phase_trace.py --trace phase_trace.csv --timeline-csv-output /tmp/at_timeline.csv
+```
+
+`--summary-csv-output` writes one row of run-level metrics. Use
+`--timeline-csv-output` when a per-transaction CSV is needed.
+
 ## Expected Trace Shape
 
 ```csv
