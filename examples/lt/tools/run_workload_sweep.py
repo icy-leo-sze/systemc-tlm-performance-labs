@@ -53,6 +53,68 @@ METRIC_FIELDS = (
     "max_bank_conflict_delay_ns",
 )
 
+BASELINE_CASE = "baseline_dual_initiator_current_default"
+
+COMPARISON_CASES = (
+    "single_initiator_101_current_default",
+    "dual_initiator_target201_hotspot",
+    "dual_initiator_target202_hotspot",
+    "dual_initiator_stride_16_current_default",
+)
+
+BASELINE_REPORT_METRICS = (
+    "total_transactions",
+    "avg_delay_ns",
+    "max_delay_ns",
+    "avg_queue_delay_ns",
+    "contention_ratio_pct",
+    "bank_conflict_ratio_pct",
+    "avg_bank_conflict_delay_ns",
+)
+
+CASE_COMPARISON_METRICS = (
+    "avg_delay_ns",
+    "max_delay_ns",
+    "avg_queue_delay_ns",
+    "contention_ratio_pct",
+    "bank_conflict_ratio_pct",
+    "avg_bank_conflict_delay_ns",
+)
+
+NS_METRICS = {
+    "avg_delay_ns",
+    "max_delay_ns",
+    "avg_queue_delay_ns",
+    "max_queue_delay_ns",
+    "avg_target_service_delay_ns",
+    "avg_bank_conflict_delay_ns",
+    "max_bank_conflict_delay_ns",
+}
+
+PCT_METRICS = {
+    "contention_ratio_pct",
+    "bank_conflict_ratio_pct",
+}
+
+CASE_INTERPRETATIONS = {
+    "single_initiator_101_current_default": (
+        "Disabling initiator 102 removes shared-target contention from the "
+        "SystemC workload, so queue delay should drop."
+    ),
+    "dual_initiator_target201_hotspot": (
+        "Concentrating traffic on the slower target 201 raises average "
+        "latency and target service cost."
+    ),
+    "dual_initiator_target202_hotspot": (
+        "Concentrating traffic on the faster target 202 keeps average latency "
+        "lower than the target 201 hotspot."
+    ),
+    "dual_initiator_stride_16_current_default": (
+        "Stride 16 maps accesses to the same bank more often, raising bank "
+        "conflict ratio and increasing avg_delay_ns."
+    ),
+}
+
 CASES = (
     {
         "case_name": "baseline_dual_initiator_current_default",
@@ -198,6 +260,148 @@ def write_sweep_summary(path, rows):
         writer = csv.DictWriter(csv_file, fieldnames=SUMMARY_FIELDS)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def markdown_cell(value):
+    return str(value).replace("\n", " ").replace("|", "\\|")
+
+
+def markdown_table(headers, rows):
+    lines = [
+        "| " + " | ".join(markdown_cell(header) for header in headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(markdown_cell(value) for value in row) + " |")
+    return lines
+
+
+def metric_float(row, field):
+    try:
+        return float(row.get(field, ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def format_metric_value(row, field):
+    value = row.get(field, "")
+    if value in (None, ""):
+        return "N/A"
+
+    if field == "total_transactions":
+        try:
+            return str(int(float(value)))
+        except (TypeError, ValueError):
+            return str(value)
+
+    if field in NS_METRICS or field in PCT_METRICS:
+        number = metric_float(row, field)
+        return "N/A" if number is None else f"{number:.3f}"
+
+    return str(value)
+
+
+def format_delta(value):
+    return "N/A" if value is None else f"{value:+.3f}"
+
+
+def comparison_rows(baseline, case):
+    rows = []
+    for metric in CASE_COMPARISON_METRICS:
+        baseline_value = metric_float(baseline, metric)
+        case_value = metric_float(case, metric)
+        delta = None
+        delta_pct = None
+        if baseline_value is not None and case_value is not None:
+            delta = case_value - baseline_value
+            if baseline_value != 0:
+                delta_pct = (delta / baseline_value) * 100
+
+        rows.append(
+            (
+                metric,
+                format_metric_value(baseline, metric),
+                format_metric_value(case, metric),
+                format_delta(delta),
+                format_delta(delta_pct),
+            )
+        )
+    return rows
+
+
+def row_passed(row):
+    return row is not None and row.get("status") == "PASS"
+
+
+def write_comparison_report(rows, path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows_by_case = {row.get("case_name"): row for row in rows}
+    baseline = rows_by_case.get(BASELINE_CASE)
+
+    lines = [
+        "# LT Workload Sweep Comparison",
+        "",
+        "Generated from `summary.csv` by `run_workload_sweep.py`.",
+        "",
+        "## Baseline",
+        "",
+    ]
+
+    if not row_passed(baseline):
+        lines.append(
+            "Baseline case is missing or failed; comparison is unavailable."
+        )
+        if baseline and baseline.get("error"):
+            lines.extend(("", f"Error: `{baseline['error']}`"))
+        lines.append("")
+        write_text(path, "\n".join(lines))
+        return
+
+    lines.extend(
+        markdown_table(
+            ("metric", "value"),
+            (
+                (metric, format_metric_value(baseline, metric))
+                for metric in BASELINE_REPORT_METRICS
+            ),
+        )
+    )
+    lines.extend(("", "## Case Comparison", ""))
+
+    for case_name in COMPARISON_CASES:
+        case = rows_by_case.get(case_name)
+        lines.extend((f"### `{case_name}`", ""))
+        if case is None:
+            lines.extend(("Case is missing from `summary.csv`.", ""))
+            continue
+        if case.get("status") != "PASS":
+            lines.append("Case failed; comparison is unavailable.")
+            if case.get("error"):
+                lines.append(f"Error: `{case['error']}`")
+            lines.append("")
+            continue
+
+        lines.extend(
+            markdown_table(
+                ("metric", "baseline", "case", "delta", "delta_pct"),
+                comparison_rows(baseline, case),
+            )
+        )
+        lines.append("")
+
+    lines.extend(("## Interpretation", ""))
+    for case_name in COMPARISON_CASES:
+        case = rows_by_case.get(case_name)
+        if not row_passed(case):
+            lines.append(
+                f"- `{case_name}`: case failed or is missing; interpretation "
+                "is unavailable."
+            )
+            continue
+        lines.append(f"- `{case_name}`: {CASE_INTERPRETATIONS[case_name]}")
+
+    lines.append("")
+    write_text(path, "\n".join(lines))
 
 
 def case_environment(case):
@@ -477,6 +681,7 @@ def main():
     trace_path = repo_path(DEFAULT_TRACE)
     workload_config_path = repo_path(DEFAULT_WORKLOAD_CONFIG)
     summary_path = output_dir / "summary.csv"
+    comparison_path = output_dir / "comparison.md"
 
     output_dir.mkdir(parents=True, exist_ok=True)
     remove_workload_config(workload_config_path)
@@ -495,7 +700,14 @@ def main():
             if not args.keep_going:
                 break
 
+    try:
+        write_comparison_report(rows, comparison_path)
+    except OSError as error:
+        failed = True
+        print(f"[sweep] failed to write {comparison_path}: {error}", file=sys.stderr)
+
     print(f"[sweep] wrote {summary_path}")
+    print(f"[sweep] wrote {comparison_path}")
     return 1 if failed else 0
 
 

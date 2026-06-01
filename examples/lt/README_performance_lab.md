@@ -293,6 +293,15 @@ stride control case 出现可测差异：
 Phase 6 analyzer remains backward-compatible with pre-bank-conflict traces by
 treating missing bank fields as zero-conflict data.
 
+## Phase 7: Sweep Comparison Report
+
+`run_workload_sweep.py` now also writes
+`examples/lt/results/sweep/comparison.md` next to `summary.csv`. The report turns
+summary metrics into baseline-vs-case architectural interpretation for
+single-initiator, target-hotspot, and stride/bank-conflict experiments. It is
+generated from sweep summary data only; it does not change workload execution,
+trace CSV format, or SystemC behavior.
+
 ## Workload Knobs
 
 当前 `traffic_generator` 可以通过构造参数配置 workload。第一版刻意把配置留在
