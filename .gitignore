@@ -8,9 +8,7 @@ tags
 artifacts
 .cache
 compile_commands.json
+phase_trace.csv
 
-# Local lt performance lab artifacts
-examples/lt/results/
-examples/lt.backup.*/
-logs/
-**/._*
+# Local reference code, not redistributed
+references/doulos_at_example/
