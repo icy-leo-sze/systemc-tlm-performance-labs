@@ -68,6 +68,7 @@ public:
     for (unsigned int i = 0; i < NR_OF_TARGETS; ++i) {
       initiator_socket[i].register_invalidate_direct_mem_ptr(this, &SimpleBusLT::invalidateDMIPointers, i);
       m_target_busy_until[i] = sc_core::SC_ZERO_TIME;
+      m_target_last_bank[i] = -1;
     }
   }
 
@@ -136,6 +137,14 @@ public:
     decodeSocket = &initiator_socket[portId];
     trans.set_address(trans.get_address() & getAddressMask(portId));
     sc_dt::uint64 maskedAddress = trans.get_address();
+    int bankId = isSystemCInitiator(SocketId) ? bankIdForAddress(maskedAddress) : -1;
+    bool bankConflict =
+        isSystemCInitiator(SocketId) && m_target_last_bank[portId] == bankId;
+    sc_core::sc_time bankConflictDelay =
+        bankConflict ? bankConflictPenalty() : sc_core::SC_ZERO_TIME;
+    if (isSystemCInitiator(SocketId)) {
+      m_target_last_bank[portId] = bankId;
+    }
 
     sc_core::sc_time grantTime =
         (m_target_busy_until[portId] > currentTime) ? m_target_busy_until[portId]
@@ -146,15 +155,20 @@ public:
 
     (*decodeSocket)->b_transport(trans, t);
 
+    sc_core::sc_time afterTargetServiceDelay = t;
+    sc_core::sc_time targetServiceDelay = afterTargetServiceDelay - beforeTargetServiceDelay;
+    t += bankConflictDelay;
+
     sc_core::sc_time afterDelay = t;
-    sc_core::sc_time targetServiceDelay = afterDelay - beforeTargetServiceDelay;
     sc_core::sc_time transactionDelay = afterDelay - beforeDelay;
-    m_target_busy_until[portId] = grantTime + targetServiceDelay;
+    m_target_busy_until[portId] =
+        grantTime + targetServiceDelay + bankConflictDelay;
 
     writeLatencyTrace(SocketId, portId, trans, originalAddress, maskedAddress,
                       startTimeNs, transactionDelay, requestTime, grantTime,
                       queueDelay, targetServiceDelay,
-                      m_target_busy_until[portId]);
+                      m_target_busy_until[portId], bankId, bankConflict,
+                      bankConflictDelay);
   }
 
   unsigned int transportDebug(int /*SocketId*/,
@@ -242,6 +256,7 @@ public:
 
 private:
   sc_core::sc_time m_target_busy_until[NR_OF_TARGETS];
+  int m_target_last_bank[NR_OF_TARGETS];
   unsigned int m_workload_transaction_count;
   sc_dt::uint64 m_workload_address_stride;
   std::string m_workload_target_pattern;
@@ -286,6 +301,21 @@ private:
     }
   }
 
+  static bool isSystemCInitiator(int socketId)
+  {
+    return socketId == 0 || socketId == 1;
+  }
+
+  static int bankIdForAddress(sc_dt::uint64 maskedAddress)
+  {
+    return static_cast<int>((maskedAddress / 4) % 4);
+  }
+
+  static sc_core::sc_time bankConflictPenalty()
+  {
+    return sc_core::sc_time(20, sc_core::SC_NS);
+  }
+
   static std::uint32_t payloadDataWord(transaction_type& trans)
   {
     std::uint32_t data = 0;
@@ -328,7 +358,8 @@ private:
            "target_service_delay_ns,total_delay_ns,target_busy_until_ns,"
            "workload_transaction_count,workload_address_stride,"
            "workload_target_pattern,workload_enable_initiator_101,"
-           "workload_enable_initiator_102";
+           "workload_enable_initiator_102,bank_id,bank_conflict,"
+           "bank_conflict_delay_ns";
   }
 
   static bool checkLatencyTraceHeader(const std::filesystem::path& path,
@@ -385,7 +416,10 @@ private:
                          sc_core::sc_time grantTime,
                          sc_core::sc_time queueDelay,
                          sc_core::sc_time targetServiceDelay,
-                         sc_core::sc_time targetBusyUntil)
+                         sc_core::sc_time targetBusyUntil,
+                         int bankId,
+                         bool bankConflict,
+                         sc_core::sc_time bankConflictDelay)
   {
     std::lock_guard<std::mutex> lock(latencyTraceMutex());
     const std::filesystem::path tracePath = latencyTracePath();
@@ -421,6 +455,7 @@ private:
     double queueDelayNs = queueDelay.to_seconds() * 1e9;
     double targetServiceDelayNs = targetServiceDelay.to_seconds() * 1e9;
     double targetBusyUntilNs = targetBusyUntil.to_seconds() * 1e9;
+    double bankConflictDelayNs = bankConflictDelay.to_seconds() * 1e9;
 
     trace << mapInitiatorId(socketId) << ','
           << mapTargetId(portId) << ','
@@ -451,7 +486,10 @@ private:
           << m_workload_address_stride << ','
           << m_workload_target_pattern << ','
           << (m_workload_enable_initiator_101 ? 1 : 0) << ','
-          << (m_workload_enable_initiator_102 ? 1 : 0) << '\n';
+          << (m_workload_enable_initiator_102 ? 1 : 0) << ','
+          << bankId << ','
+          << (bankConflict ? 1 : 0) << ','
+          << bankConflictDelayNs << '\n';
   }
 
 };

@@ -30,6 +30,12 @@ REQUIRED_FIELDS = (
     "target_busy_until_ns",
 )
 
+OPTIONAL_FIELD_DEFAULTS = {
+    "bank_id": "-1",
+    "bank_conflict": "0",
+    "bank_conflict_delay_ns": "0.0",
+}
+
 FLOAT_FIELDS = (
     "start_time_ns",
     "delay_ns",
@@ -40,8 +46,9 @@ FLOAT_FIELDS = (
     "target_service_delay_ns",
     "total_delay_ns",
     "target_busy_until_ns",
+    "bank_conflict_delay_ns",
 )
-INT_FIELDS = ("data_length", "decoded_port")
+INT_FIELDS = ("data_length", "decoded_port", "bank_id", "bank_conflict")
 DEDUP_IDENTICAL_FIELDS = (
     "initiator_id",
     "target_id",
@@ -66,6 +73,9 @@ DEDUP_IDENTICAL_FIELDS = (
     "workload_target_pattern",
     "workload_enable_initiator_101",
     "workload_enable_initiator_102",
+    "bank_id",
+    "bank_conflict",
+    "bank_conflict_delay_ns",
 )
 WORKLOAD_FIELDS = (
     "workload_transaction_count",
@@ -82,6 +92,10 @@ SUMMARY_FIELDS = (
     "max_queue_delay_ns",
     "contention_ratio_pct",
     "avg_target_service_delay_ns",
+    "total_bank_conflicts",
+    "bank_conflict_ratio_pct",
+    "avg_bank_conflict_delay_ns",
+    "max_bank_conflict_delay_ns",
 )
 
 
@@ -200,6 +214,10 @@ def load_rows(trace_path):
         for row_number, row in enumerate(reader, start=2):
             row["_row_number"] = row_number
 
+            for field, default in OPTIONAL_FIELD_DEFAULTS.items():
+                if row.get(field) in (None, ""):
+                    row[field] = default
+
             for field in FLOAT_FIELDS:
                 row[field] = parse_float(row.get(field))
 
@@ -239,6 +257,16 @@ def contention_ratio(rows):
     if not rows:
         return None
     return 100.0 * len(contended_rows(rows)) / len(rows)
+
+
+def bank_conflict_rows(rows):
+    return [row for row in rows if row.get("bank_conflict") == 1]
+
+
+def bank_conflict_ratio(rows):
+    if not rows:
+        return None
+    return 100.0 * len(bank_conflict_rows(rows)) / len(rows)
 
 
 def filter_rows(rows, args):
@@ -367,11 +395,13 @@ def print_overview(rows, raw_count, analyzed_count, deduplicated_count, filters)
     queue_delays = metric_values(rows, "queue_delay_ns")
     service_delays = metric_values(rows, "target_service_delay_ns")
     total_delays = metric_values(rows, "total_delay_ns")
+    bank_conflict_delays = metric_values(rows, "bank_conflict_delay_ns")
 
     first_start = min(starts) if starts else None
     last_end = max(ends) if ends else None
     observed_time = last_end - first_start if first_start is not None and last_end is not None else None
     contended_count = len(contended_rows(rows))
+    bank_conflict_count = len(bank_conflict_rows(rows))
 
     print_table(
         "Overview",
@@ -396,6 +426,10 @@ def print_overview(rows, raw_count, analyzed_count, deduplicated_count, filters)
             ("max_total_delay_ns", format_number(max(total_delays) if total_delays else None)),
             ("contended_transactions", contended_count),
             ("contention_ratio_pct", format_number(contention_ratio(rows))),
+            ("total_bank_conflicts", bank_conflict_count),
+            ("bank_conflict_ratio_pct", format_number(bank_conflict_ratio(rows))),
+            ("avg_bank_conflict_delay_ns", format_number(average(bank_conflict_delays))),
+            ("max_bank_conflict_delay_ns", format_number(max(bank_conflict_delays) if bank_conflict_delays else None)),
         ),
     )
 
@@ -425,10 +459,26 @@ def print_contention_summary(rows):
     )
 
 
+def print_bank_conflict_summary(rows):
+    bank_conflict_delays = metric_values(rows, "bank_conflict_delay_ns")
+    print_table(
+        "Bank Conflict Summary",
+        ("metric", "value"),
+        (
+            ("total_transactions", len(rows)),
+            ("total_bank_conflicts", len(bank_conflict_rows(rows))),
+            ("bank_conflict_ratio_pct", format_number(bank_conflict_ratio(rows))),
+            ("avg_bank_conflict_delay_ns", format_number(average(bank_conflict_delays))),
+            ("max_bank_conflict_delay_ns", format_number(max(bank_conflict_delays) if bank_conflict_delays else None)),
+        ),
+    )
+
+
 def summary_metrics(rows):
     delays = metric_values(rows, "delay_ns")
     queue_delays = metric_values(rows, "queue_delay_ns")
     service_delays = metric_values(rows, "target_service_delay_ns")
+    bank_conflict_delays = metric_values(rows, "bank_conflict_delay_ns")
 
     return {
         "total_transactions": len(rows),
@@ -438,6 +488,10 @@ def summary_metrics(rows):
         "max_queue_delay_ns": format_number(max(queue_delays) if queue_delays else None),
         "contention_ratio_pct": format_number(contention_ratio(rows)),
         "avg_target_service_delay_ns": format_number(average(service_delays)),
+        "total_bank_conflicts": len(bank_conflict_rows(rows)),
+        "bank_conflict_ratio_pct": format_number(bank_conflict_ratio(rows)),
+        "avg_bank_conflict_delay_ns": format_number(average(bank_conflict_delays)),
+        "max_bank_conflict_delay_ns": format_number(max(bank_conflict_delays) if bank_conflict_delays else None),
     }
 
 
@@ -525,6 +579,8 @@ def sanity_row(row):
         format_number(row.get("delay_ns")),
         format_number(row.get("queue_delay_ns")),
         format_number(row.get("target_service_delay_ns")),
+        row.get("bank_conflict", ""),
+        format_number(row.get("bank_conflict_delay_ns")),
         format_number(row.get("total_delay_ns")),
         row.get("response_status", ""),
     ]
@@ -545,6 +601,8 @@ def print_sanity_block(title, rows):
             "delay_ns",
             "queue_delay_ns",
             "target_service_delay_ns",
+            "bank_conflict",
+            "bank_conflict_delay_ns",
             "total_delay_ns",
             "response_status",
         ),
@@ -579,16 +637,21 @@ def print_sanity_checks(rows):
             [row for row in rows if row.get("delay_ns") is not None and row["delay_ns"] < 0],
         ),
         (
-            "Sanity: total_delay_ns != queue_delay_ns + target_service_delay_ns",
+            "Sanity: total_delay_ns != queue_delay_ns + target_service_delay_ns + bank_conflict_delay_ns",
             [
                 row
                 for row in rows
                 if row.get("total_delay_ns") is not None
                 and row.get("queue_delay_ns") is not None
                 and row.get("target_service_delay_ns") is not None
+                and row.get("bank_conflict_delay_ns") is not None
                 and abs(
                     row["total_delay_ns"]
-                    - (row["queue_delay_ns"] + row["target_service_delay_ns"])
+                    - (
+                        row["queue_delay_ns"]
+                        + row["target_service_delay_ns"]
+                        + row["bank_conflict_delay_ns"]
+                    )
                 )
                 > 0.001
             ],
@@ -629,6 +692,9 @@ def timeline_row(row):
         format_number(row.get("delay_ns")),
         format_number(row.get("queue_delay_ns")),
         format_number(row.get("target_service_delay_ns")),
+        row.get("bank_id", ""),
+        row.get("bank_conflict", ""),
+        format_number(row.get("bank_conflict_delay_ns")),
         format_number(row.get("total_delay_ns")),
         row.get("response_status", ""),
     ]
@@ -649,6 +715,9 @@ def print_timeline(rows, title):
             "delay_ns",
             "queue_delay_ns",
             "target_service_delay_ns",
+            "bank_id",
+            "bank_conflict",
+            "bank_conflict_delay_ns",
             "total_delay_ns",
             "response_status",
         ),
@@ -691,6 +760,7 @@ def main():
     print_overview(rows, len(raw_rows), len(analyzed_rows), deduplicated_count, filters)
     print_workload_config_hint(rows)
     print_contention_summary(rows)
+    print_bank_conflict_summary(rows)
     print_table(
         "By initiator_id",
         (

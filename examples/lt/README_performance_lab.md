@@ -92,7 +92,8 @@ examples/lt/results/latency_trace.csv
 - `bus_grant_time_ns`: 根据 target `busy_until` 计算出的服务开始时间。
 - `queue_delay_ns`: 共享 target 路径上的排队等待。
 - `target_service_delay_ns`: target 本身增加的服务时间。
-- `total_delay_ns`: `queue_delay_ns + target_service_delay_ns`。
+- `total_delay_ns`: initiator 观察到的总 delay；Phase 6 后等于
+  `queue_delay_ns + target_service_delay_ns + bank_conflict_delay_ns`。
 - `target_busy_until_ns`: 本次 transaction 后该 target 下一次可服务时间。
 - `workload_transaction_count`: 本次实验中每个启用 initiator 的 transaction count。
 - `workload_address_stride`: 本次实验配置的地址步长。
@@ -100,6 +101,9 @@ examples/lt/results/latency_trace.csv
   `target201_only` 或 `target202_only`。
 - `workload_enable_initiator_101`: 本次实验是否启用 initiator 101。
 - `workload_enable_initiator_102`: 本次实验是否启用 initiator 102。
+- `bank_id`: Phase 6 minimal bank model 计算出的 bank id。
+- `bank_conflict`: 是否命中同 target 连续同 bank 访问。
+- `bank_conflict_delay_ns`: bank conflict 引入的额外 delay。
 
 ## Phase 4: Target Contention Modeling
 
@@ -111,7 +115,7 @@ transaction observed delay，而 trace 会把这部分 delay 拆成 target servi
 和 contention queueing cost：
 
 ```text
-total_delay_ns = queue_delay_ns + target_service_delay_ns
+total_delay_ns = queue_delay_ns + target_service_delay_ns + bank_conflict_delay_ns
 delay_ns       = observed transaction delay
 ```
 
@@ -119,7 +123,7 @@ delay_ns       = observed transaction delay
 
 - `target_service_delay_ns`: target 本身引入的服务时间。
 - `queue_delay_ns`: 共享 target 路径上的排队等待，由 contention 产生。
-- `total_delay_ns`: 排队等待和 target 服务时间之和。
+- `total_delay_ns`: 排队等待、target 服务时间和 bank conflict penalty 之和。
 - `delay_ns`: initiator 可见的 observed transaction delay。
 
 对于 target 201 的 `READ`，target service delay 是 `120 ns`，但 observed delay
@@ -203,6 +207,10 @@ examples/lt/results/sweep/summary.csv
 - `max_queue_delay_ns`
 - `contention_ratio_pct`
 - `avg_target_service_delay_ns`
+- `total_bank_conflicts`
+- `bank_conflict_ratio_pct`
+- `avg_bank_conflict_delay_ns`
+- `max_bank_conflict_delay_ns`
 - `error`
 
 `summary.csv` 中的 `status=PASS` 表示该 case 的 `renode-test` 成功返回，并且
@@ -226,6 +234,9 @@ address stride 等因素对 queue delay 和 contention ratio 的影响。
 
 ## Expected Sweep Results
 
+下表记录的是 Phase 5.5 在引入 bank conflict model 之前的 Ubuntu 验证快照；Phase 6
+之后，stride 16 case 预期会与 baseline 拉开。
+
 | case_name | target_pattern | initiators | total_transactions | avg_delay_ns | avg_queue_delay_ns | contention_ratio_pct | interpretation |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
 | baseline_dual_initiator_current_default | both/current_default | 101 + 102 | 128 | 146.250 | 71.250 | 93.750 | Balanced dual-initiator baseline across target 201 and target 202. |
@@ -238,9 +249,35 @@ address stride 等因素对 queue delay 和 contention ratio 的影响。
 target 202 hotspot 和 stride control。`avg_delay_ns` 由 target service delay 和
 queue delay 共同构成，Phase 5 的价值是把 target 本身服务成本与共享资源竞争成本拆开。
 target 201 hotspot 比 target 202 hotspot 慢，是因为 target 201 的 service delay 更高。
-stride 16 当前与 baseline 一样，这是一个有意保留的 control case，说明模型还没有引入
-cache line、bank conflict、burst locality 或 page locality。当前 lab 仍然只是一个
-minimal SystemC/TLM performance modeling lab，不是完整 NoC 模型。
+在 Phase 5.5 结果中，stride 16 与 baseline 一样，这是一个有意保留的 control case，
+说明当时模型还没有引入 cache line、bank conflict、burst locality 或 page locality。
+当前 lab 仍然只是一个 minimal SystemC/TLM performance modeling lab，不是完整 NoC 模型。
+
+## Phase 6: Minimal Bank Conflict Model
+
+Phase 6 在 `SimpleBusLT` 中加入一个很小的 bank conflict / locality model，用来让
+`LT_ADDRESS_STRIDE=4` 和 `LT_ADDRESS_STRIDE=16` 在 sweep 中产生可观察差异。它只作用于
+SystemC traffic generator，也就是 initiator `101` 和 `102`；Renode bridge `9002` 仍然只
+作为功能验证流量。
+
+bank id 的计算方式是：
+
+```text
+bank_id = (masked_address / 4) % 4
+```
+
+如果同一个 target 连续访问同一个 bank，bus 会增加 `20 ns` 的
+`bank_conflict_delay_ns`。这个 delay 会进入 initiator 观察到的 `delay_ns` 和
+`total_delay_ns`，并更新 target `busy_until`；但 `target_service_delay_ns` 仍然只表示
+target 本身的服务时间。`analyze_latency.py` 和 sweep `summary.csv` 会报告
+`total_bank_conflicts`、`bank_conflict_ratio_pct`、`avg_bank_conflict_delay_ns` 和
+`max_bank_conflict_delay_ns`。
+
+这个模型只用于观察最小 locality / bank conflict 效应，不是 cache、DRAM controller、
+bank scheduler 或完整 NoC 模型。当前预期是 `dual_initiator_stride_16_current_default`
+相比 baseline 出现更高的 bank conflict ratio 或 observed delay。
+Phase 6 analyzer remains backward-compatible with pre-bank-conflict traces by
+treating missing bank fields as zero-conflict data.
 
 ## Workload Knobs
 
@@ -367,9 +404,10 @@ python3 examples/lt/tools/analyze_latency.py \
   --exclude-initiator 9002
 ```
 
-报告包含 `Contention Summary`、`avg_queue_delay_ns`、`max_queue_delay_ns`、
-`contention_ratio_pct`、response status 统计、decoded port 统计、address range
-summary、data length summary、sanity checks，以及 first/last timeline rows。
+报告包含 `Contention Summary`、`Bank Conflict Summary`、`avg_queue_delay_ns`、
+`max_queue_delay_ns`、`contention_ratio_pct`、bank conflict 统计、response status 统计、
+decoded port 统计、address range summary、data length summary、sanity checks，以及
+first/last timeline rows。
 
 ## Current Modeling Meaning
 

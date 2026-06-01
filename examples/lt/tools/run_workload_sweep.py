@@ -32,6 +32,10 @@ SUMMARY_FIELDS = (
     "max_queue_delay_ns",
     "contention_ratio_pct",
     "avg_target_service_delay_ns",
+    "total_bank_conflicts",
+    "bank_conflict_ratio_pct",
+    "avg_bank_conflict_delay_ns",
+    "max_bank_conflict_delay_ns",
     "error",
 )
 
@@ -43,6 +47,10 @@ METRIC_FIELDS = (
     "max_queue_delay_ns",
     "contention_ratio_pct",
     "avg_target_service_delay_ns",
+    "total_bank_conflicts",
+    "bank_conflict_ratio_pct",
+    "avg_bank_conflict_delay_ns",
+    "max_bank_conflict_delay_ns",
 )
 
 CASES = (
