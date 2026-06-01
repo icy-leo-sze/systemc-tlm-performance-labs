@@ -25,6 +25,25 @@ conflict / locality 模型。
   ratio。
 - `comparison.md` 会把 sweep summary metrics 转成 baseline-vs-case 的架构对比说明。
 
+## 一键演示
+
+最短复现命令：
+
+```bash
+python3 examples/lt/tools/demo_performance_lab.py
+```
+
+这个脚本会清理旧的 trace/config/sweep 输出，依次运行 `renode-test`、`analyze_latency.py`
+和 `run_workload_sweep.py`，最后打印关键输出路径和 4 条架构结论。它只是把已有 analyzer
+和 sweep runner 串起来，不改变 SystemC 模型、transaction routing、trace CSV 格式或
+统计逻辑。
+
+生成的主要文件：
+
+- `examples/lt/results/analysis.txt`
+- `examples/lt/results/sweep/summary.csv`
+- `examples/lt/results/sweep/comparison.md`
+
 ## 快速开始
 
 Ubuntu 示例，从仓库根目录执行：
