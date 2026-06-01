@@ -216,6 +216,8 @@ examples/lt/results/latency_trace.csv
 | Phase 5.5 | 为 GitHub 读者整理 expected sweep results |
 | Phase 6 | minimal bank conflict / locality model |
 | Phase 7 | `comparison.md` baseline-vs-case sweep report |
+| Phase 8 | `demo_performance_lab.py` one-command demo |
+| Phase 9 | 从 LT workflow 走向 AT timing refinement 的 roadmap |
 
 ## Workload Sweep
 
@@ -333,6 +335,49 @@ sweep metrics，但它不是 cache、DRAM controller、bank scheduler 或完整 
 
 `analyze_latency.py` 对 pre-bank-conflict trace 保持兼容：如果旧 CSV 缺少 bank 字段，
 分析器会把它当作 zero-conflict data。
+
+## Roadmap: From LT Workflow to AT Timing Refinement
+
+当前版本是 LT-based architecture performance analysis workflow，不是 AT 或
+cycle-accurate timing model。它的价值在于先建立一条可重复的实验骨架：
+
+- workload parameterization
+- transaction trace observability
+- architecture-level latency decomposition
+- sweep comparison
+- reproducible demo
+
+当前 LT 版本不声称解决这些问题：
+
+- cycle-accurate timing
+- real AXI/CHI/NoC protocol timing
+- true request/response phase overlap
+- outstanding transaction reordering
+- back-pressure / retry behavior
+
+未来 AT 版本的目标是提升 timing protocol fidelity，而不是推翻当前 workflow。可能的演进
+方向包括：
+
+- 用 non-blocking `nb_transport_fw` / `nb_transport_bw` 替换当前 blocking
+  `b_transport` path。
+- 建模 TLM phases：`BEGIN_REQ`、`END_REQ`、`BEGIN_RESP`、`END_RESP`。
+- 跟踪 outstanding transactions。
+- 分离 request arbitration 和 response scheduling。
+- 建模 initiator-side queues 和 target-side response latency。
+- 暴露 AT-level trace fields，用于观察 phase timing、overlap、reordering 和 response
+  path latency。
+
+| Layer | Current LT lab | Future AT refinement |
+| --- | --- | --- |
+| protocol abstraction | blocking `b_transport` transaction | non-blocking `nb_transport_fw` / `nb_transport_bw` phases |
+| timing fidelity | transaction-level annotated delay | phase-level timing with request/response handshakes |
+| concurrency | 最小 target serialization 和 bank conflict | outstanding transactions、phase overlap、response ordering |
+| queue modeling | target `busy_until`、queue delay、bank conflict penalty | request arbitration、initiator queues、target response scheduling |
+| trace fields | transaction latency、queue/service/bank delay、workload config | `BEGIN_REQ` / `END_REQ` / `BEGIN_RESP` / `END_RESP` timing and outstanding IDs |
+| best use case | 快速建立 workload → trace → metrics → sweep → interpretation 骨架 | 细化 timing protocol fidelity 和更接近真实互连行为的分析 |
+
+因此，当前 LT lab 更适合作为 migration scaffold / experimental scaffold：先把实验输入、
+trace、指标、sweep 和解释链路跑通，再逐步替换为 AT timing refinement。
 
 ## 限制
 
