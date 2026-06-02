@@ -85,6 +85,12 @@ public:
     SimpleAtBus(sc_core::sc_module_name name, PhaseTrace &trace);
 
 private:
+    enum class ArbitrationPolicy {
+        Fifo,
+        Priority101,
+        Priority102,
+    };
+
     struct PendingRequest {
         tlm::tlm_generic_payload *trans;
         unsigned int initiator_id;
@@ -107,6 +113,8 @@ private:
                                             tlm::tlm_generic_payload &trans,
                                             tlm::tlm_phase &phase,
                                             sc_core::sc_time &delay);
+    static ArbitrationPolicy arbitration_policy_from_env();
+    PendingRequest pop_next_request();
     void service_requests();
 
     PhaseTrace &trace_;
@@ -114,6 +122,7 @@ private:
     std::deque<PendingRequest> pending_requests_;
     tlm::tlm_generic_payload *active_request_;
     unsigned int active_initiator_id_;
+    ArbitrationPolicy arbitration_policy_;
 
     SC_HAS_PROCESS(SimpleAtBus);
 };

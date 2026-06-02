@@ -2,6 +2,7 @@
 
 #include "at_lab.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
@@ -261,6 +262,7 @@ SimpleAtBus::SimpleAtBus(sc_core::sc_module_name name, PhaseTrace &trace)
     , trace_(trace)
     , active_request_(nullptr)
     , active_initiator_id_(0)
+    , arbitration_policy_(arbitration_policy_from_env())
 {
     upstream_socket_101.register_nb_transport_fw(
         this, &SimpleAtBus::nb_transport_fw_101);
@@ -349,6 +351,53 @@ tlm::tlm_sync_enum SimpleAtBus::send_bw_to_initiator(unsigned int initiator_id,
     return tlm::TLM_ACCEPTED;
 }
 
+SimpleAtBus::ArbitrationPolicy SimpleAtBus::arbitration_policy_from_env()
+{
+    const char *policy = std::getenv("AT_ARBITRATION_POLICY");
+
+    if (policy == nullptr || std::strcmp(policy, "") == 0 ||
+        std::strcmp(policy, "fifo") == 0) {
+        return ArbitrationPolicy::Fifo;
+    }
+
+    if (std::strcmp(policy, "priority_101") == 0) {
+        return ArbitrationPolicy::Priority101;
+    }
+
+    if (std::strcmp(policy, "priority_102") == 0) {
+        return ArbitrationPolicy::Priority102;
+    }
+
+    SC_REPORT_FATAL("at_lab",
+                    "unknown AT_ARBITRATION_POLICY; expected fifo, "
+                    "priority_101, or priority_102");
+    return ArbitrationPolicy::Fifo;
+}
+
+SimpleAtBus::PendingRequest SimpleAtBus::pop_next_request()
+{
+    if (arbitration_policy_ == ArbitrationPolicy::Fifo) {
+        PendingRequest request = pending_requests_.front();
+        pending_requests_.pop_front();
+        return request;
+    }
+
+    const unsigned int preferred_initiator =
+        arbitration_policy_ == ArbitrationPolicy::Priority101 ? 101 : 102;
+
+    for (auto it = pending_requests_.begin(); it != pending_requests_.end(); ++it) {
+        if (it->initiator_id == preferred_initiator) {
+            PendingRequest request = *it;
+            pending_requests_.erase(it);
+            return request;
+        }
+    }
+
+    PendingRequest request = pending_requests_.front();
+    pending_requests_.pop_front();
+    return request;
+}
+
 void SimpleAtBus::service_requests()
 {
     while (true) {
@@ -358,8 +407,7 @@ void SimpleAtBus::service_requests()
             continue;
         }
 
-        PendingRequest request = pending_requests_.front();
-        pending_requests_.pop_front();
+        PendingRequest request = pop_next_request();
 
         active_request_ = request.trans;
         active_initiator_id_ = request.initiator_id;

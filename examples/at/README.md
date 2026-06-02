@@ -49,6 +49,24 @@ Because `BEGIN_REQ` is traced when the bus receives the initiator request, while
 `request_accept_latency_ns` exposes arbitration / queueing delay. This is still
 only an AT smoke lab; it is not a cycle-accurate AXI, CHI, or NoC model.
 
+## Phase 13: Arbitration Policy Knob
+
+Phase 13 adds a small policy knob on the same bus. Set
+`AT_ARBITRATION_POLICY` before running the executable:
+
+```bash
+AT_ARBITRATION_POLICY=fifo ./build/examples/at/at
+AT_ARBITRATION_POLICY=priority_101 ./build/examples/at/at
+AT_ARBITRATION_POLICY=priority_102 ./build/examples/at/at
+```
+
+`fifo` is the default when the variable is unset. `priority_101` chooses an
+initiator 101 request first when both initiators have pending requests, while
+`priority_102` does the same for initiator 102. The CSV schema is unchanged, so
+the same analyzer can compare `request_accept_latency_ns` across policies. This
+policy knob is still a smoke-lab refinement only; it is not a NoC, bank-conflict,
+AXI, CHI, or cycle-accurate timing model.
+
 ## Build and Run
 
 From the repository root:
@@ -94,6 +112,28 @@ python3 examples/at/tools/analyze_phase_trace.py --trace phase_trace.csv --timel
 
 `--summary-csv-output` writes one row of run-level metrics. Use
 `--timeline-csv-output` when a per-transaction CSV is needed.
+
+To compare policies:
+
+```bash
+AT_ARBITRATION_POLICY=fifo ./build/examples/at/at
+python3 -B examples/at/tools/analyze_phase_trace.py \
+  --trace phase_trace.csv \
+  --timeline-csv-output /tmp/fifo_timeline.csv \
+  --fail-on-sanity
+
+AT_ARBITRATION_POLICY=priority_101 ./build/examples/at/at
+python3 -B examples/at/tools/analyze_phase_trace.py \
+  --trace phase_trace.csv \
+  --timeline-csv-output /tmp/priority101_timeline.csv \
+  --fail-on-sanity
+
+AT_ARBITRATION_POLICY=priority_102 ./build/examples/at/at
+python3 -B examples/at/tools/analyze_phase_trace.py \
+  --trace phase_trace.csv \
+  --timeline-csv-output /tmp/priority102_timeline.csv \
+  --fail-on-sanity
+```
 
 ## Expected Trace Shape
 
