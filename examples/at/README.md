@@ -89,6 +89,27 @@ to continue after a failed case. The runner is an AT arbitration policy sweep
 for this smoke lab; it is not an AXI, CHI, NoC, bank-conflict, or
 cycle-accurate timing model.
 
+## One-command AT demo
+
+Phase 15 adds a small wrapper that runs the AT smoke lab, analyzes the default
+trace, and then runs the arbitration sweep:
+
+```bash
+python3 examples/at/tools/demo_at_lab.py \
+  --binary ./build/examples/at/at
+```
+
+It writes:
+
+- `phase_trace.csv`
+- `examples/at/results/analysis.txt`
+- `examples/at/results/arbitration_sweep/summary.csv`
+- `examples/at/results/arbitration_sweep/comparison.md`
+
+The demo only orchestrates the existing AT binary, phase trace analyzer, and
+arbitration sweep runner. It is not an AXI, CHI, NoC, bank-conflict, or
+cycle-accurate timing model.
+
 ## Build and Run
 
 From the repository root:
