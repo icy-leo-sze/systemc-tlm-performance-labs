@@ -1,5 +1,7 @@
 # Minimal AT smoke lab
 
+[Project overview](../../README.md) | [LT performance lab](../lt/README_performance_lab.md)
+
 This directory is a small, original TLM-2.0 approximately-timed smoke lab. The local
 `references/doulos_at_example/` tree was used only as a protocol-shape reference:
 it is not redistributed here, and this example does not copy Doulos source blocks.

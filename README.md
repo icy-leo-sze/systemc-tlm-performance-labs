@@ -1,215 +1,108 @@
-# Renode - SystemC integration examples
+# Renode SystemC Performance Modeling Labs
 
-Copyright (c) 2024-2026 [Antmicro](https://www.antmicro.com)
+## What This Project Is
 
-## Overview
+This repository is a SystemC/TLM virtual platform performance modeling lab built
+on Renode-SystemC integration examples. It starts with an LT architecture-level
+performance workflow and extends toward AT phase-level timing refinement. It is
+not a cycle-accurate AXI, CHI, or NoC model. Its value is a reproducible
+experiment chain: workload -> trace -> metrics -> sweep -> comparison -> demo.
 
-This repository contains tools for creating Renode simulations using
-components written in SystemC and a range of examples.
+## Project Map
 
-Renode and SystemC simulations run as separate processes, communicating
-through reusable interface components - a memory-mapped `SystemCPeripheral`
-peripheral in Renode and a `renode_bridge` SystemC module in SystemC.
+| Lab | Path | Abstraction | Main capability | Demo |
+| --- | --- | --- | --- | --- |
+| LT Performance Lab | [`examples/lt`](examples/lt) | LT | Latency decomposition and workload sweep | `python3 examples/lt/tools/demo_performance_lab.py` |
+| AT Arbitration Lab | [`examples/at`](examples/at) | AT | Phase trace and arbitration policy sweep | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at` |
 
-From the perspective of Renode, a SystemC model can be interacted with like any
-other peripheral. From the perspective of SystemC, Renode is represented
-by a module connected by standard TLM sockets.
+Detailed lab notes:
 
-## Dependencies
+- LT workflow: [`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)
+- AT workflow: [`examples/at/README.md`](examples/at/README.md)
 
--   Renode
--   SystemC dynamic libraries
--   C++ compiler (tested with Clang, GCC)
--   CMake
+## Why It Matters
 
-## Building the examples
+The LT line demonstrates an architecture-level performance workflow: workload
+knobs, transaction trace instrumentation, latency decomposition, workload sweep,
+and generated comparison reports.
 
-The repository follows the standard CMake build process, that is:
-``` bash
-$ mkdir build
-$ cd build
-$ cmake .. -DUSER_RENODE_DIR=<absolute path to Renode>
-$ make
-```
+The AT line demonstrates phase-level timing observability with the TLM-2.0 base
+protocol phases: `BEGIN_REQ`, `END_REQ`, `BEGIN_RESP`, and `END_RESP`. It also
+shows how a small arbitration policy knob can change visible request-accept
+latency.
 
-When run from the repository root, the above commands will build all the examples.
-Individual examples are built by running the above in the directory for
-a particular example (e.g. `examples/lt`).
+Together, the two labs form a migration path from architecture workflow to AT
+timing refinement without claiming protocol completeness or cycle accuracy.
 
-### Custom SystemC builds
+## Quick Start
 
-To compile the examples with custom SystemC builds, use `-DUSER_SYSTEMC_LIB_DIR` to specify
-the directory with SystemC binaries and `-DUSER_SYSTEMC_INCLUDE_DIR` to provide the path to headers.
-If these are missing, the build script will attempt to use a system-wide SystemC installation.
-
-### SystemC distribution and C++ standard version
-
-SystemC libraries are compiled against a particular version of the C++
-standard. The build process in this repository assumes C++ 17 by default, which
-should be the case for all SystemC packages installed on reasonably
-up-to-date systems. If this is not the case, however, the builds may fail with
-`undefined reference to sc_core::sc_api_version_2_3_4_cxx2017...` linker
-errors. In that case, either install an up-to-date SystemC distribution
-or pass an appropriate `-DCMAKE_CXX_STANDARD` argument to the relevant `cmake`
-call, for example:
-
-``` bash
-$ cmake .. -DUSER_RENODE_DIR=<absolute path to Renode> -DCMAKE_CXX_STANDARD=17
-```
-
-This will build `renode_bridge` and the examples using the chosen
-standard instead of the default C++17.
-
-## Repository structure
-
-### `examples` directory
-
-Contains one subdirectory for each available example, with the following
-structure:
-
-``` raw
-my_example
-├── CMakeLists.txt           CMake configuration building the SystemC executable (bin/my_example)
-├── bin
-│   ├── my_example           SystemC executable
-│   └── my_example.elf       Zephyr binary, if the example uses it and is built locally
-├── renode
-│   ├── my_example.repl      Description of the Renode platform on which the example is run
-│   └── my_example.resc      Renode script for initialization of the example 
-├── systemc
-│   ├── include              C++/SystemC header files for the example
-│   └── src                  C++/SystemC implementation files for the example
-├── zephyr                   Zephyr RTOS source code, if the example uses a Zephyr executable
-└── my_example.robot         Robot Framework file with test logic
-```
-
-### `tests` directory
-
-Contains tests for specific scenarios, including regression tests. They are not very illustrative and less interesting to users looking for reference. Other than that, the structure is identical to that of `examples`.
-
-## Running the examples
-
-To run `my_example` from the repository root, use:
+Build the AT lab from the repository root:
 
 ```bash
-$ renode-test examples/my_example/my_example.robot
+cmake -S examples/at -B build/examples/at
+cmake --build build/examples/at
 ```
 
-To run all examples:
+If SystemC is not discoverable through the default search paths, pass explicit
+paths:
 
-``` bash
-$ pushd examples
-$ renode-test -t all_examples.yaml
-$ popd
+```bash
+cmake -S examples/at -B build/examples/at \
+  -DUSER_SYSTEMC_LIB_DIR=<absolute path to SystemC lib> \
+  -DUSER_SYSTEMC_INCLUDE_DIR=<absolute path to SystemC include>
+cmake --build build/examples/at
 ```
 
-## Example descriptions
+Run the AT one-command demo:
 
-### [Loosely-timed SystemC example](examples/lt)
-
-Located in the /examples/lt folder, `lt` illustrates the integration of Renode with a non-trivial SystemC
-model. It is an adaptation of the `loosely-timed` example, which is part of the
-official SystemC-2.3.4 distribution.
-
-The SystemC model consists of two `initiator` modules that generate traffic, two
-`memory` modules that implement simple memories and a bus module that connects
-them.
-
-The above has been extended so that the Renode simulation serves as a third
-"initiator" module, reading and writing to the memories modelled in the
-SystemC process via `sysbus Read/Write ...` Renode commands.
-
-### [Time synchronization on STM32 Mini F401](examples/timesync/)
-
-Located in the /examples/timesync folder, `timesync` illustrates virtual time synchronization between Renode and
-SystemC. It is also simulated within a more complex platform (the [STM32 Mini
-F401](https://renodepedia.renode.io/boards/stm32f401_mini/?view=software&demo=hello_world)),
-extended with the SystemC peripheral. The SystemC part is a simple timer that
-returns SystemC virtual time in seconds when read from. The Renode simulation
-reads it and outputs the obtained time to the UART. It can then be compared with
-Renode virtual time to confirm that they are synchronized.
-
-### [Transaction delay on STM32 Mini F401](examples/transaction-delay)
-
-Located in the /examples/transaction-delay folder, `transaction-delay` is very similar to `timesync`, but additionally the
-read transaction from the SystemC peripheral is delayed through the `delay`
-parameter in the TLM `b_transport` call. The result is that time value read
-from `timekeeper` arrives with a one second delay, which can be confirmed by
-looking at the UART output.
-
-### [Interrupts and GPIO](examples/interrupts)
-
-Located in the /examples/interrupts folder, `interrupts`  shows how to model interrupt requests sent through the Renode -
-SystemC interface.
-
-The SystemC part contains two `interrupter` modules, each sending IRQs to Renode.
-`Interrupters` are connected by a simple bus module, routing the requests
-to one or the other based on the address.
-
-Interrupter modules connect their interrupt lines directly to `renode_bridge`
-through SystemC ports bound to `sc_signal<bool>` channels.
-
-The two interrupter modules raise interrupts in fixed periods. The interrupt
-signals are cleared when any value is written to the interrupters. The Renode side
-of the simulation sets up two interrupt handlers - one for each interrupter.
-When the Renode-simulated CPU receives an interrupt, an output message is
-written to the UART and the interrupt signal is cleared by writing to the
-appropriate interrupter memory address.
-
-### [Simple DMA](examples/dma)
-
-Located in the /examples/dma folder, `dma` shows a rudimentary DMA controller (DMAC) peripheral implemented in
-SystemC and connected to Renode. It illustrates SystemC-to-Renode bus
-communication and handling of Renode-initiated GPIO signals.
-
-The Renode script sets up the DMAC by setting the appropriate source, destination
-and data length registers. It then starts the memory transfer by writing to the
-DMAC control register. Next, DMAC is informed that the bus is free by Renode
-raising a "bus free" signal on one of the GPIO pins on the SystemC
-peripheral. The DMAC then performs a memory-to-memory transfer according to the
-setup.
-
-### [Direct connection](examples/direct-connection)
-
-Located in the /examples/direct-connection folder, `direct-connection` illustrates a case where there are multiple SystemC peripherals.
-It also demonstrates the use of the `direct connection` functionality, allowing
-peripherals to communicate using memory-mapped transfers that are not going through the
-Renode system bus. This, for example, allows them to communicate using a
-different address space than the system bus address space.
-
-The peripherals hold a single value, which can be changed by writing to the
-peripheral. When read from, the peripheral will read the value not from itself,
-but from the other peripheral, using the direct connection. This is transparent from
-the point of view of the Renode system bus. The example works by writing values
-to the two peripherals, and illustrating that reading from one of them returns
-the value saved in the other.
-
-``` raw
-┌─────────────────┐                  ┌────────────┐
-│                 │◄────────────────►│Peripheral 0│
-│                 │                  └─────┬──────┘
-│Renode system bus│                        │ Direct connection
-│                 │                  ┌─────┴──────┐
-│                 │◄────────────────►│Peripheral 1│
-└─────────────────┘                  └────────────┘
+```bash
+python3 examples/at/tools/demo_at_lab.py \
+  --binary ./build/examples/at/at
 ```
 
-### [Non-blocking TLM binding](examples/tlm-non-blocking)
+Run the LT one-command demo:
 
-Located in the /examples/tlm-non-blocking folder, `tlm-non-blocking` is almost identical to `direct-connection`. The most important
-difference is that the peripherals use a non-blocking TLM interface. This is just
-a matter of syntax, as the integration still handles the transactions in a
-single phase.
+```bash
+python3 examples/lt/tools/demo_performance_lab.py
+```
 
-### [Multiple peripherals](examples/multiple-peripherals)
+For LT Renode setup, generated artifacts, and detailed interpretation, see
+[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md).
 
-Located in the /examples/multiple-peripherals folder, `multiple-peripherals` illustrates a possible translation of a pure SystemC simulation to
-a co-simulation with Renode, with use of most integration features. The README in
-the example directory provides more details.
+## Key Results Snapshot
 
-### [GPIO connection](examples/gpio-connection)
+These are validated lab snapshots, not hardware timing claims.
 
-Located in the /examples/gpio-connection folder, this basic example illustrates a SystemCPeripheral connected to an output GPIO of another peripheral.
+| Lab | Case | Result |
+| --- | --- | --- |
+| LT | `stride=4` to `stride=16` | `bank_conflict_ratio_pct` rises from `46.875%` to `98.438%`; `avg_delay_ns` rises from `164.688 ns` to `185.312 ns` |
+| AT | `fifo` | `complete_transactions = 4` |
+| AT | `priority_101` | accepts `101xxx` faster: `101xxx avg = 1.000 ns`, `102xxx avg = 6.000 ns` |
+| AT | `priority_102` | accepts `102xxx` faster: `102xxx avg = 1.000 ns`, `101xxx avg = 6.000 ns` |
 
-The SystemC model updates its internal state after receiving a GPIO event, sent by a `MiV_CoreGPIO` peripheral modelled in Renode. The state is then read
-through the system bus to verify that the communication finished successfully.
+## Roadmap
+
+Planned directions are deliberately small and validation-oriented:
+
+- AT multi-target path
+- AT response scheduling
+- outstanding transaction depth
+- LT vs AT comparison under equivalent workload
+
+These items are future work, not completed capabilities.
+
+## Boundaries
+
+- This is an educational and experimental modeling lab.
+- It is not cycle accurate.
+- It is not AXI, CHI, or NoC compliant.
+- It does not claim real interconnect protocol support.
+- The LT lab is an architecture-level workflow, not a final timing model.
+- The AT lab is a smoke/arbitration lab, not a production interconnect model.
+- A local Doulos AT example, if present, is only a protocol-shape reference and
+  is not redistributed by this repository.
+
+## License and Attribution
+
+This repository retains the upstream Renode-SystemC integration license and
+notice files. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

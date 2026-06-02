@@ -1,5 +1,7 @@
 # examples/lt 性能建模实验室
 
+[Project overview](../../README.md) | [AT arbitration lab](../at/README.md)
+
 `examples/lt` 是一个基于原始 Renode + SystemC/TLM loosely-timed 示例改造出来的小型
 性能建模实验室。它保留了原来的 Renode bridge 和 LT blocking transport 路径，并在此
 基础上加入 transaction trace、latency 分析、workload sweep，以及一个最小 bank
