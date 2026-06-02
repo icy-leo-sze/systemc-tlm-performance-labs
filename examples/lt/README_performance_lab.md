@@ -51,7 +51,7 @@ python3 examples/lt/tools/demo_performance_lab.py
 Ubuntu 示例，从仓库根目录执行：
 
 ```bash
-cd /home/leo/renode-systemc-examples
+cd <repo-root>
 
 # 单次 Robot 运行前可选清理。
 rm -f examples/lt/results/latency_trace.csv
@@ -84,7 +84,7 @@ python3 examples/lt/tools/run_workload_sweep.py \
 如果 `lt` binary 还没有构建，可以先执行：
 
 ```bash
-cd /home/leo/renode-systemc-examples/examples/lt
+cd <repo-root>/examples/lt
 
 source /home/leo/tools/renode_1.16.1-dotnet_portable/renode-env
 
