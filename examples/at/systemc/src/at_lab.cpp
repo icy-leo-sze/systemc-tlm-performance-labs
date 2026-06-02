@@ -122,32 +122,48 @@ void PhaseTrace::log(const char *component, const char *direction,
          << trans.get_response_string() << '\n';
 }
 
-Initiator::Initiator(sc_core::sc_module_name name)
+Initiator::Initiator(sc_core::sc_module_name name, unsigned int initiator_id,
+                     std::uint64_t address, std::uint32_t write_data)
     : sc_core::sc_module(name)
     , socket("socket")
     , peq_(this, &Initiator::handle_bw_phase)
+    , initiator_id_(initiator_id)
+    , address_(address)
+    , write_data_(write_data)
     , request_in_progress_(nullptr)
     , response_seen_(false)
+    , done_(false)
 {
     socket.register_nb_transport_bw(this, &Initiator::nb_transport_bw);
     SC_THREAD(run);
+}
+
+bool Initiator::done() const
+{
+    return done_;
+}
+
+const sc_core::sc_event &Initiator::done_event() const
+{
+    return done_event_;
 }
 
 void Initiator::run()
 {
     wait(sc_core::SC_ZERO_TIME);
 
-    std::uint32_t write_data = 0x1234abcd;
-    send_transaction(tlm::TLM_WRITE_COMMAND, 0x0, write_data, 1);
+    std::uint32_t write_data = write_data_;
+    send_transaction(tlm::TLM_WRITE_COMMAND, address_, write_data, make_txn_id(1));
 
     std::uint32_t read_data = 0;
-    send_transaction(tlm::TLM_READ_COMMAND, 0x0, read_data, 2);
+    send_transaction(tlm::TLM_READ_COMMAND, address_, read_data, make_txn_id(2));
 
     if (read_data != write_data) {
         SC_REPORT_FATAL("at_lab", "READ did not return the value written by WRITE");
     }
 
-    sc_core::sc_stop();
+    done_ = true;
+    done_event_.notify(sc_core::SC_ZERO_TIME);
 }
 
 void Initiator::send_transaction(tlm::tlm_command command, std::uint64_t address,
@@ -187,6 +203,11 @@ void Initiator::send_transaction(tlm::tlm_command command, std::uint64_t address
     }
 
     trans.clear_extension<TxnIdExtension>();
+}
+
+unsigned int Initiator::make_txn_id(unsigned int sequence) const
+{
+    return initiator_id_ * 1000 + sequence;
 }
 
 tlm::tlm_sync_enum Initiator::nb_transport_bw(tlm::tlm_generic_payload &trans,
@@ -234,28 +255,124 @@ void Initiator::check_response(const tlm::tlm_generic_payload &trans) const
 
 SimpleAtBus::SimpleAtBus(sc_core::sc_module_name name, PhaseTrace &trace)
     : sc_core::sc_module(name)
-    , upstream_socket("upstream_socket")
+    , upstream_socket_101("upstream_socket_101")
+    , upstream_socket_102("upstream_socket_102")
     , downstream_socket("downstream_socket")
     , trace_(trace)
+    , active_request_(nullptr)
+    , active_initiator_id_(0)
 {
-    upstream_socket.register_nb_transport_fw(this, &SimpleAtBus::nb_transport_fw);
+    upstream_socket_101.register_nb_transport_fw(
+        this, &SimpleAtBus::nb_transport_fw_101);
+    upstream_socket_102.register_nb_transport_fw(
+        this, &SimpleAtBus::nb_transport_fw_102);
     downstream_socket.register_nb_transport_bw(this, &SimpleAtBus::nb_transport_bw);
+    SC_THREAD(service_requests);
 }
 
-tlm::tlm_sync_enum SimpleAtBus::nb_transport_fw(tlm::tlm_generic_payload &trans,
+tlm::tlm_sync_enum SimpleAtBus::nb_transport_fw_101(tlm::tlm_generic_payload &trans,
+                                                    tlm::tlm_phase &phase,
+                                                    sc_core::sc_time &delay)
+{
+    return nb_transport_fw(101, trans, phase, delay);
+}
+
+tlm::tlm_sync_enum SimpleAtBus::nb_transport_fw_102(tlm::tlm_generic_payload &trans,
+                                                    tlm::tlm_phase &phase,
+                                                    sc_core::sc_time &delay)
+{
+    return nb_transport_fw(102, trans, phase, delay);
+}
+
+tlm::tlm_sync_enum SimpleAtBus::nb_transport_fw(unsigned int initiator_id,
+                                                tlm::tlm_generic_payload &trans,
                                                 tlm::tlm_phase &phase,
                                                 sc_core::sc_time &delay)
 {
     trace_.log("bus", "FW", trans, phase, delay);
-    return downstream_socket->nb_transport_fw(trans, phase, delay);
+
+    if (phase == tlm::BEGIN_REQ) {
+        pending_requests_.push_back(PendingRequest{&trans, initiator_id});
+        service_event_.notify(delay);
+        return tlm::TLM_ACCEPTED;
+    }
+
+    if (phase == tlm::END_RESP) {
+        if (&trans != active_request_ || initiator_id != active_initiator_id_) {
+            SC_REPORT_FATAL("at_lab",
+                            "bus received END_RESP for an unknown transaction");
+        }
+
+        tlm::tlm_sync_enum status =
+            downstream_socket->nb_transport_fw(trans, phase, delay);
+        if (status == tlm::TLM_COMPLETED) {
+            SC_REPORT_FATAL("at_lab", "target completed an END_RESP unexpectedly");
+        }
+
+        active_request_ = nullptr;
+        active_initiator_id_ = 0;
+        service_event_.notify(sc_core::SC_ZERO_TIME);
+        return tlm::TLM_ACCEPTED;
+    }
+
+    SC_REPORT_FATAL("at_lab", "bus received an unexpected forward AT phase");
+    return tlm::TLM_ACCEPTED;
 }
 
 tlm::tlm_sync_enum SimpleAtBus::nb_transport_bw(tlm::tlm_generic_payload &trans,
                                                 tlm::tlm_phase &phase,
                                                 sc_core::sc_time &delay)
 {
+    if (&trans != active_request_) {
+        SC_REPORT_FATAL("at_lab",
+                        "bus received a backward phase for an unknown transaction");
+    }
+
     trace_.log("bus", "BW", trans, phase, delay);
-    return upstream_socket->nb_transport_bw(trans, phase, delay);
+    return send_bw_to_initiator(active_initiator_id_, trans, phase, delay);
+}
+
+tlm::tlm_sync_enum SimpleAtBus::send_bw_to_initiator(unsigned int initiator_id,
+                                                     tlm::tlm_generic_payload &trans,
+                                                     tlm::tlm_phase &phase,
+                                                     sc_core::sc_time &delay)
+{
+    if (initiator_id == 101) {
+        return upstream_socket_101->nb_transport_bw(trans, phase, delay);
+    }
+
+    if (initiator_id == 102) {
+        return upstream_socket_102->nb_transport_bw(trans, phase, delay);
+    }
+
+    SC_REPORT_FATAL("at_lab", "bus cannot route backward phase to initiator");
+    return tlm::TLM_ACCEPTED;
+}
+
+void SimpleAtBus::service_requests()
+{
+    while (true) {
+        wait(service_event_);
+
+        if (active_request_ != nullptr || pending_requests_.empty()) {
+            continue;
+        }
+
+        PendingRequest request = pending_requests_.front();
+        pending_requests_.pop_front();
+
+        active_request_ = request.trans;
+        active_initiator_id_ = request.initiator_id;
+
+        tlm::tlm_phase phase = tlm::BEGIN_REQ;
+        sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
+        tlm::tlm_sync_enum status =
+            downstream_socket->nb_transport_fw(*active_request_, phase, delay);
+
+        if (status != tlm::TLM_ACCEPTED) {
+            SC_REPORT_FATAL("at_lab", "target did not accept BEGIN_REQ asynchronously");
+        }
+    }
 }
 
 Target::Target(sc_core::sc_module_name name)
@@ -263,7 +380,7 @@ Target::Target(sc_core::sc_module_name name)
     , socket("socket")
     , pending_request_(nullptr)
     , response_in_progress_(nullptr)
-    , word_(0)
+    , words_{0, 0}
 {
     socket.register_nb_transport_fw(this, &Target::nb_transport_fw);
     SC_THREAD(process_requests);
@@ -324,17 +441,23 @@ void Target::process_requests()
 
 void Target::execute(tlm::tlm_generic_payload &trans)
 {
-    if (trans.get_address() != 0 || trans.get_data_length() != sizeof(word_) ||
+    const std::uint64_t word_index = trans.get_address() / sizeof(std::uint32_t);
+
+    if ((trans.get_address() % sizeof(std::uint32_t)) != 0 ||
+        word_index >= words_.size() ||
+        trans.get_data_length() != sizeof(std::uint32_t) ||
         trans.get_byte_enable_ptr() != nullptr ||
-        trans.get_streaming_width() < sizeof(word_)) {
+        trans.get_streaming_width() < sizeof(std::uint32_t)) {
         trans.set_response_status(tlm::TLM_GENERIC_ERROR_RESPONSE);
         return;
     }
 
+    std::uint32_t &word = words_[word_index];
+
     if (trans.is_write()) {
-        std::memcpy(&word_, trans.get_data_ptr(), sizeof(word_));
+        std::memcpy(&word, trans.get_data_ptr(), sizeof(word));
     } else if (trans.is_read()) {
-        std::memcpy(trans.get_data_ptr(), &word_, sizeof(word_));
+        std::memcpy(trans.get_data_ptr(), &word, sizeof(word));
     } else {
         trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
         return;
@@ -345,12 +468,24 @@ void Target::execute(tlm::tlm_generic_payload &trans)
 
 Top::Top(sc_core::sc_module_name name, PhaseTrace &trace)
     : sc_core::sc_module(name)
-    , initiator_("initiator")
+    , initiator101_("initiator101", 101, 0x0, 0x1010abcd)
+    , initiator102_("initiator102", 102, 0x4, 0x1020abcd)
     , bus_("bus", trace)
     , target_("target")
 {
-    initiator_.socket.bind(bus_.upstream_socket);
+    initiator101_.socket.bind(bus_.upstream_socket_101);
+    initiator102_.socket.bind(bus_.upstream_socket_102);
     bus_.downstream_socket.bind(target_.socket);
+    SC_THREAD(stop_when_done);
+}
+
+void Top::stop_when_done()
+{
+    while (!initiator101_.done() || !initiator102_.done()) {
+        wait(initiator101_.done_event() | initiator102_.done_event());
+    }
+
+    sc_core::sc_stop();
 }
 
 }  // namespace at_lab

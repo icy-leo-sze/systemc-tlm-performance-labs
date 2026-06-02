@@ -10,17 +10,19 @@ It is not a cycle-accurate model, and it is not a real AXI, CHI, or NoC timing
 model. Its only goal is to validate the TLM-2.0 AT four-phase flow and produce a
 phase trace that makes that flow visible.
 
-The lab contains:
+The lab now contains:
 
-- one initiator
-- one pass-through AT bus
-- one target
-- one WRITE followed by one READ
+- initiator 101
+- initiator 102
+- one simple AT bus / arbiter
+- one shared target
+- one WRITE followed by one READ from each initiator
 - CSV tracing of the four base-protocol phases
 
-The target stores a single 32-bit word at address `0x0`. The initiator writes
-`0x1234abcd` with transaction id 1, reads the word back with transaction id 2,
-sends `END_RESP`, and stops the simulation.
+The target stores two 32-bit words. Initiator 101 writes `0x1010abcd` to
+address `0x0` with transaction id `101001`, then reads it back with transaction
+id `101002`. Initiator 102 writes `0x1020abcd` to address `0x4` with
+transaction id `102001`, then reads it back with transaction id `102002`.
 
 ## Phase Flow
 
@@ -33,6 +35,19 @@ For each transaction:
 5. Initiator checks the response and sends `END_RESP` on the forward path.
 
 The bus writes these transitions to `phase_trace.csv`.
+
+## Phase 12: Dual Initiator Arbitration
+
+Phase 12 extends the smoke lab to two initiators sharing one target path. The
+bus is a tiny FIFO arbiter: it accepts `BEGIN_REQ` from either initiator, keeps
+queued requests alive, and forwards only one active request at a time to the
+target. The next queued request is released after the current transaction's
+`END_RESP` reaches the target.
+
+Because `BEGIN_REQ` is traced when the bus receives the initiator request, while
+`END_REQ` is traced only after that request reaches the target, the analyzer's
+`request_accept_latency_ns` exposes arbitration / queueing delay. This is still
+only an AT smoke lab; it is not a cycle-accurate AXI, CHI, or NoC model.
 
 ## Build and Run
 
@@ -82,14 +97,24 @@ python3 examples/at/tools/analyze_phase_trace.py --trace phase_trace.csv --timel
 
 ## Expected Trace Shape
 
+A representative trace contains four complete transactions:
+
 ```csv
 txn_id,component,direction,phase,command,address,data,time_ns,delay_ns,response_status
-1,bus,FW,BEGIN_REQ,WRITE,0x0000000000000000,0x1234abcd,0.000,0.000,TLM_INCOMPLETE_RESPONSE
-1,bus,BW,END_REQ,WRITE,0x0000000000000000,0x1234abcd,1.000,0.000,TLM_INCOMPLETE_RESPONSE
-1,bus,BW,BEGIN_RESP,WRITE,0x0000000000000000,0x1234abcd,5.000,0.000,TLM_OK_RESPONSE
-1,bus,FW,END_RESP,WRITE,0x0000000000000000,0x1234abcd,5.000,0.000,TLM_OK_RESPONSE
-2,bus,FW,BEGIN_REQ,READ,0x0000000000000000,0x00000000,5.000,0.000,TLM_INCOMPLETE_RESPONSE
-2,bus,BW,END_REQ,READ,0x0000000000000000,0x00000000,6.000,0.000,TLM_INCOMPLETE_RESPONSE
-2,bus,BW,BEGIN_RESP,READ,0x0000000000000000,0x1234abcd,10.000,0.000,TLM_OK_RESPONSE
-2,bus,FW,END_RESP,READ,0x0000000000000000,0x1234abcd,10.000,0.000,TLM_OK_RESPONSE
+102001,bus,FW,BEGIN_REQ,WRITE,0x0000000000000004,0x1020abcd,0.000,0.000,TLM_INCOMPLETE_RESPONSE
+101001,bus,FW,BEGIN_REQ,WRITE,0x0000000000000000,0x1010abcd,0.000,0.000,TLM_INCOMPLETE_RESPONSE
+102001,bus,BW,END_REQ,WRITE,0x0000000000000004,0x1020abcd,1.000,0.000,TLM_INCOMPLETE_RESPONSE
+102001,bus,BW,BEGIN_RESP,WRITE,0x0000000000000004,0x1020abcd,5.000,0.000,TLM_OK_RESPONSE
+102001,bus,FW,END_RESP,WRITE,0x0000000000000004,0x1020abcd,5.000,0.000,TLM_OK_RESPONSE
+102002,bus,FW,BEGIN_REQ,READ,0x0000000000000004,0x00000000,5.000,0.000,TLM_INCOMPLETE_RESPONSE
+101001,bus,BW,END_REQ,WRITE,0x0000000000000000,0x1010abcd,6.000,0.000,TLM_INCOMPLETE_RESPONSE
+101001,bus,BW,BEGIN_RESP,WRITE,0x0000000000000000,0x1010abcd,10.000,0.000,TLM_OK_RESPONSE
+101001,bus,FW,END_RESP,WRITE,0x0000000000000000,0x1010abcd,10.000,0.000,TLM_OK_RESPONSE
+101002,bus,FW,BEGIN_REQ,READ,0x0000000000000000,0x00000000,10.000,0.000,TLM_INCOMPLETE_RESPONSE
+102002,bus,BW,END_REQ,READ,0x0000000000000004,0x00000000,11.000,0.000,TLM_INCOMPLETE_RESPONSE
+102002,bus,BW,BEGIN_RESP,READ,0x0000000000000004,0x1020abcd,15.000,0.000,TLM_OK_RESPONSE
+102002,bus,FW,END_RESP,READ,0x0000000000000004,0x1020abcd,15.000,0.000,TLM_OK_RESPONSE
+101002,bus,BW,END_REQ,READ,0x0000000000000000,0x00000000,16.000,0.000,TLM_INCOMPLETE_RESPONSE
+101002,bus,BW,BEGIN_RESP,READ,0x0000000000000000,0x1010abcd,20.000,0.000,TLM_OK_RESPONSE
+101002,bus,FW,END_RESP,READ,0x0000000000000000,0x1010abcd,20.000,0.000,TLM_OK_RESPONSE
 ```
