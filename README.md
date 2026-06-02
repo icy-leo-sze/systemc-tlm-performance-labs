@@ -1,4 +1,4 @@
-# SystemC/TLM Performance Labs
+# SystemC/TLM Architecture Performance Labs
 
 ## What This Project Is
 
