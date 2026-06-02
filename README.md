@@ -1,4 +1,4 @@
-# Renode SystemC Performance Modeling Labs
+# SystemC/TLM Performance Labs
 
 ## What This Project Is
 
