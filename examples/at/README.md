@@ -67,6 +67,28 @@ the same analyzer can compare `request_accept_latency_ns` across policies. This
 policy knob is still a smoke-lab refinement only; it is not a NoC, bank-conflict,
 AXI, CHI, or cycle-accurate timing model.
 
+## Phase 14: Arbitration Sweep Runner
+
+Phase 14 adds a small runner that executes multiple arbitration policies and
+collects analyzer output:
+
+```bash
+python3 examples/at/tools/run_arbitration_sweep.py \
+  --binary ./build/examples/at/at
+```
+
+By default it runs `fifo`, `priority_101`, and `priority_102`, then writes:
+
+- `examples/at/results/arbitration_sweep/summary.csv`
+- `examples/at/results/arbitration_sweep/comparison.md`
+- one case directory per policy, each with `phase_trace.csv`,
+  `summary_metrics.csv`, `timeline.csv`, and captured stdout/stderr files
+
+Use `--output-dir <path>` to put generated files elsewhere, and `--keep-going`
+to continue after a failed case. The runner is an AT arbitration policy sweep
+for this smoke lab; it is not an AXI, CHI, NoC, bank-conflict, or
+cycle-accurate timing model.
+
 ## Build and Run
 
 From the repository root:
