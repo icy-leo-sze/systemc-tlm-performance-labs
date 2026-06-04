@@ -2,10 +2,10 @@
 
 [Project overview](../../README.md) | [AT arbitration lab](../at/README.md)
 
-`examples/lt` 是一个基于原始 Renode + SystemC/TLM loosely-timed 示例改造出来的小型
-性能建模实验室。它保留了原来的 Renode bridge 和 LT blocking transport 路径，并在此
-基础上加入 transaction trace、latency 分析、workload sweep，以及一个最小 bank
-conflict / locality 模型。
+`examples/lt` 是一个 LT performance modeling lab。它保留 Renode bridge 和 LT
+blocking transport path 作为 integration foundation；当前项目重点是 latency
+decomposition、workload sweep、comparison report 和 one-command demo，并包含一个
+最小 bank conflict / locality 模型。
 
 这个 lab 的目标是把 transaction-level trace 转成 architecture-level latency analysis。
 它可以把一次 transaction 的延迟拆成：
@@ -14,8 +14,8 @@ conflict / locality 模型。
 - shared-resource queue delay
 - minimal bank conflict delay
 
-它还可以通过可重复的 sweep cases 比较 single initiator、dual initiator、target hotspot
-和 stride/locality workload。
+它还可以通过可重复的 sweep cases 比较 single initiator、dual initiator、target hotspot、
+stride/locality workload，以及 Phase 16A memory access pattern sweep。
 
 这仍然是一个 minimal LT performance model，不是完整 NoC、cache 或 DRAM 模型。
 
@@ -25,6 +25,8 @@ conflict / locality 模型。
 - target 201 hotspot 比 target 202 hotspot 慢，因为 target 201 的 service delay 更高。
 - 在 Phase 6 minimal bank model 下，`stride=16` 相比 `stride=4` 会提高 bank conflict
   ratio。
+- Phase 16A 会把 `sequential`、`stride`、`hotspot` 三种 memory access pattern 放在同一
+  条 trace/summary/comparison 链路里比较。
 - `comparison.md` 会把 sweep summary metrics 转成 baseline-vs-case 的架构对比说明。
 
 ## 一键演示
@@ -46,9 +48,34 @@ python3 examples/lt/tools/demo_performance_lab.py
 - `examples/lt/results/sweep/summary.csv`
 - `examples/lt/results/sweep/comparison.md`
 
+Phase 16A memory access pattern MVP 使用独立的一键演示。Ubuntu 验证时使用的命令为：
+
+```bash
+python3 examples/lt/tools/demo_memory_access_pattern_lab.py \
+  --robot examples/lt/lt.robot \
+  --output-dir examples/lt/results/memory_access_pattern_lab \
+  --renode-test-cmd renode-test
+```
+
+这个 demo 是 architecture-level SystemC/TLM memory access pattern lab，只运行三种
+pattern：
+
+- `sequential`
+- `stride`
+- `hotspot`
+
+生成的主要文件：
+
+- `examples/lt/results/memory_access_pattern_lab/trace.csv`
+- `examples/lt/results/memory_access_pattern_lab/summary.csv`
+- `examples/lt/results/memory_access_pattern_lab/comparison.md`
+
+当前验证结果显示，`stride` 会显著放大 minimal bank conflict；`sequential` 和
+`hotspot` 在这组 MVP 输入下保持 zero-conflict baseline。
+
 ## 快速开始
 
-Ubuntu 示例，从仓库根目录执行：
+Ubuntu 示例，从仓库根目录执行；下面的 `<repo-root>` 表示当前仓库根目录：
 
 ```bash
 cd <repo-root>
@@ -67,8 +94,15 @@ python3 examples/lt/tools/run_workload_sweep.py \
   --output-dir examples/lt/results/sweep \
   --keep-going
 
+python3 examples/lt/tools/run_memory_access_pattern_sweep.py \
+  --robot examples/lt/lt.robot \
+  --output-dir examples/lt/results/memory_access_pattern_lab \
+  --keep-going
+
 column -s, -t examples/lt/results/sweep/summary.csv | sed -n '1,12p'
 sed -n '1,220p' examples/lt/results/sweep/comparison.md
+column -s, -t examples/lt/results/memory_access_pattern_lab/summary.csv | sed -n '1,8p'
+sed -n '1,220p' examples/lt/results/memory_access_pattern_lab/comparison.md
 ```
 
 如果 `renode-test` 不在 `PATH` 中，可以显式指定：
@@ -78,6 +112,12 @@ python3 examples/lt/tools/run_workload_sweep.py \
   --renode-test-cmd /home/leo/tools/renode_1.16.1-dotnet_portable/renode-test \
   --robot examples/lt/lt.robot \
   --output-dir examples/lt/results/sweep \
+  --keep-going
+
+python3 examples/lt/tools/run_memory_access_pattern_sweep.py \
+  --renode-test-cmd /home/leo/tools/renode_1.16.1-dotnet_portable/renode-test \
+  --robot examples/lt/lt.robot \
+  --output-dir examples/lt/results/memory_access_pattern_lab \
   --keep-going
 ```
 
@@ -101,6 +141,13 @@ ln -sf ../build/lt bin/lt
   `SimpleBusLT::initiatorBTransport()` 记录的原始 transaction trace。
 - `examples/lt/results/sweep/summary.csv`: sweep 之后的一行一个 case 的总表。
 - `examples/lt/results/sweep/comparison.md`: baseline-vs-case 的 sweep 对比报告。
+- `examples/lt/results/memory_access_pattern_lab/trace.csv`: Phase 16A 三种 memory
+  access pattern 的合并 trace，包含 `case_id` 字段。
+- `examples/lt/results/memory_access_pattern_lab/summary.csv`: Phase 16A MVP summary，
+  至少包含 `pattern`、`stride`、`num_transactions`、tail latency、bank conflict ratio
+  和 throughput。
+- `examples/lt/results/memory_access_pattern_lab/comparison.md`: 适合放进作品集的
+  sequential/stride/hotspot 对比说明。
 
 trace 路径由正在运行的 `lt` 可执行文件通过 `/proc/self/exe` 解析。如果可执行文件位于
 `examples/lt/build/lt` 或 `examples/lt/bin/lt`，trace 会写到 `examples/lt/results`。
@@ -203,6 +250,10 @@ examples/lt/results/latency_trace.csv
 - `workload_target_pattern`: `current_default`、`target201_only` 或 `target202_only`。
 - `workload_enable_initiator_101`: initiator 101 的 workload enable flag。
 - `workload_enable_initiator_102`: initiator 102 的 workload enable flag。
+- `workload_memory_pattern`: `legacy`、`sequential`、`stride` 或 `hotspot`。
+- `workload_hotspot_ratio`: hotspot pattern 中映射到热点地址的事务比例。
+- `transaction_index`: 每个 SystemC initiator 的 trace-local transaction index。
+- `is_hotspot_access`: 当前 transaction 是否被 Phase 16A 标记为 hotspot access。
 - `bank_id`: Phase 6 minimal bank id。
 - `bank_conflict`: 是否命中同 target 连续同 bank 访问。
 - `bank_conflict_delay_ns`: minimal bank conflict model 引入的额外 delay。
@@ -220,6 +271,7 @@ examples/lt/results/latency_trace.csv
 | Phase 7 | `comparison.md` baseline-vs-case sweep report |
 | Phase 8 | `demo_performance_lab.py` one-command demo |
 | Phase 9 | 从 LT workflow 走向 AT timing refinement 的 roadmap |
+| Phase 16A | sequential / stride / hotspot memory access pattern MVP |
 
 ## Workload Sweep
 
@@ -255,6 +307,94 @@ examples/lt/tools/run_workload_sweep.py
 sweep summary 默认只分析 SystemC traffic generator initiators `101` 和 `102`，不把
 Renode bridge initiator `9002` 混入默认性能指标。
 
+## Phase 16A Memory Access Pattern Sweep
+
+Phase 16A MVP runner：
+
+```text
+examples/lt/tools/run_memory_access_pattern_sweep.py
+```
+
+默认只运行三种 memory access pattern：
+
+| pattern | knobs | 建模含义 |
+| --- | --- | --- |
+| `sequential` | `LT_MEMORY_PATTERN=sequential`, `LT_ADDRESS_STRIDE=4` | 连续 word access，作为 locality-friendly baseline |
+| `stride` | `LT_MEMORY_PATTERN=stride`, `LT_ADDRESS_STRIDE=16` | 固定较大 stride，更容易反复映射到 minimal bank model 的同一 bank |
+| `hotspot` | `LT_MEMORY_PATTERN=hotspot`, `LT_ADDRESS_STRIDE=4`, `LT_HOTSPOT_RATIO=0.8` | 约 80% transaction 集中到同一个 base address |
+
+MVP runner 复用已有 LT trace 和 analyzer：
+
+- 每个 case 写入短生命周期的 `examples/lt/results/workload_config.env`
+- 运行 `renode-test examples/lt/lt.robot`
+- 复制 per-case `trace.csv`
+- 运行 `analyze_latency.py --initiator 101 --dedup-identical --fail-on-sanity`
+- 校验 trace 中的 `workload_memory_pattern`、`workload_address_stride`、
+  `workload_hotspot_ratio` 和 hotspot 标记
+- 输出合并后的 `trace.csv`
+- 输出一行一个 pattern 的 `summary.csv`
+- 输出 sequential/stride/hotspot 的 latency 和 bank conflict 对比报告
+
+Phase 16A `summary.csv` 至少包含：
+
+- `pattern`
+- `stride`
+- `num_transactions`
+- `avg_latency_ns`
+- `p50_latency_ns`
+- `p95_latency_ns`
+- `p99_latency_ns`
+- `max_latency_ns`
+- `bank_conflict_ratio_pct`
+- `throughput_txn_per_us`
+
+### Phase 16A Memory Access Pattern MVP
+
+Phase 16A 是 architecture-level SystemC/TLM memory access pattern lab。它不改变
+当前 LT blocking transport path，而是把同一个 workload/trace/metrics/sweep/comparison
+链路用于比较三种 access pattern：
+
+| pattern | 建模目的 |
+| --- | --- |
+| `sequential` | locality-friendly baseline，按较小 stride 连续访问 |
+| `stride` | 固定较大 stride，刻意放大 minimal bank model 下的 same-bank repeat |
+| `hotspot` | 把热点访问集中到固定 base address，用于和 sequential/stride 对照 |
+
+Ubuntu 验证命令返回：
+
+```text
+[demo] Phase 16A Memory Access Pattern MVP PASS
+```
+
+关键结果：
+
+| pattern | avg_latency_ns | p99_latency_ns | bank_conflict_ratio_pct | throughput_txn_per_us |
+| --- | ---: | ---: | ---: | ---: |
+| `sequential` | 100.000 | 120.000 | 0.000% | 20.000 |
+| `stride` | 119.688 | 140.000 | 98.438% | 16.710 |
+| `hotspot` | 100.000 | 120.000 | 0.000% | 20.000 |
+
+`stride` 的 bank conflict ratio 高达 `98.438%`，原因是 Phase 6 minimal bank model
+使用：
+
+```text
+bank_id = (masked_address / 4) % 4
+```
+
+`sequential` 使用 `stride=4` 时，word address 会在 4 个 minimal banks 之间轮转。
+`stride` case 使用 `stride=16`，等价于每次跨过 4 个 word；代入上面的 modulo-4 bank
+mapping 后会反复回到同一个 bank。`SimpleBusLT` 又按 target 记录上一次访问的 bank，
+所以同一 target 上连续回到同一 bank 的 transaction 会触发 `bank_conflict_delay_ns`。
+本轮 64 笔 transaction 中有 63 笔被计为 conflict，因此比例是 `63 / 64 * 100 =
+98.438%`。
+
+Phase 16A 的 `comparison.md` 面向作品集展示：它说明三种 access pattern 的 workload
+差异、avg/p95/p99 latency delta、bank conflict ratio delta，以及为什么当前 MVP 中
+`stride` 比 `sequential` 和 `hotspot` 更容易放大 bank conflict。
+
+这些数字是当前 LT 架构级实验结果，不是通用硬件 timing claim。Phase 16A 不声称
+cycle accuracy，也不声称 AXI、CHI、NoC 或 DRAM protocol compliance。
+
 ## Workload Knobs
 
 如果没有设置 knobs，默认行为保持原始 `lt.robot` baseline workload。
@@ -267,6 +407,13 @@ Renode bridge initiator `9002` 混入默认性能指标。
   - `both`: 当前 default pattern，访问 target 201 和 target 202。
   - `target201`: 只访问 target 201。
   - `target202`: 只访问 target 202。
+- `LT_MEMORY_PATTERN`:
+  - `legacy`: 保持原始 workload phase 行为。
+  - `sequential`: 按 `LT_ADDRESS_STRIDE` 生成连续 pattern。
+  - `stride`: 使用较大 stride 生成 locality/bank-conflict 对比 pattern。
+  - `hotspot`: 按 `LT_HOTSPOT_RATIO` 把部分 transaction 固定到热点地址。
+- `LT_HOTSPOT_RATIO`: `hotspot` pattern 中热点 transaction 的比例，Phase 16A 默认
+  使用 `0.8`。
 
 runner 会把这些值作为 environment variables 传入，同时也会写
 `workload_config.env`。这是因为 Renode 启动的 SystemC 子进程不一定继承
@@ -397,6 +544,6 @@ trace、指标、sweep 和解释链路跑通，再逐步替换为 AT timing refi
 适合继续保持小而可重复的方向：
 
 - 把 sweep case matrix 移到一个小配置文件中
-- 给 `summary.csv` 和 `comparison.md` 增加 tail latency metrics
+- 扩展 Phase 16A 到更多 pattern，例如 read-only、write-only 或 multi-target variant
 - 增加显式 arbitration policy knobs
 - 增加简单 per-target bandwidth 参数
