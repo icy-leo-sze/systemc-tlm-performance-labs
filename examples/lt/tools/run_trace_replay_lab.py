@@ -405,9 +405,10 @@ def write_summary_csv(path, rows):
 
 
 def write_comparison(path, summary_rows):
-    by_workload = {row["workload_name"]: row for row in summary_rows}
-    sequential = by_workload.get("sample_sequential")
-    stride = by_workload.get("sample_stride")
+    first = summary_rows[0] if summary_rows else None
+    second = summary_rows[1] if len(summary_rows) > 1 else None
+    first_name = first["workload_name"] if first else "first_workload"
+    second_name = second["workload_name"] if second else "second_workload"
 
     lines = [
         "# Project B Normalized Trace Replay MVP Comparison",
@@ -415,8 +416,9 @@ def write_comparison(path, summary_rows):
         "Generated from `summary.csv` by `run_trace_replay_lab.py`.",
         "",
         "This MVP replays normalized memory traces through the LT performance "
-        "lab's minimal latency and bank-conflict abstraction. It does not use "
-        "gem5, and it is not gem5-SystemC live co-simulation.",
+        "lab's minimal latency and bank-conflict abstraction. The replay step "
+        "does not run gem5; gem5-derived inputs are consumed only as files. "
+        "This is not gem5-SystemC live co-simulation.",
         "",
         "## Replay Cases",
         "",
@@ -427,46 +429,49 @@ def write_comparison(path, summary_rows):
             (tuple(row[field] for field in SUMMARY_FIELDS) for row in summary_rows),
         )
     )
-    lines.extend(["", "## Sequential vs Stride", ""])
+    lines.extend(["", f"## {first_name} vs {second_name}", ""])
 
-    if sequential is None or stride is None:
-        lines.append("Sequential or stride summary is missing; comparison unavailable.")
+    if first is None or second is None:
+        lines.append(
+            "At least two workload summaries are required for delta comparison; "
+            "deltas unavailable."
+        )
     else:
         lines.extend(
             markdown_table(
                 (
                     "metric",
-                    "sample_sequential",
-                    "sample_stride",
-                    "stride_delta",
+                    first_name,
+                    second_name,
+                    "delta_second_minus_first",
                 ),
                 (
                     (
                         "avg_latency_ns",
-                        sequential["avg_latency_ns"],
-                        stride["avg_latency_ns"],
-                        format_number(delta(stride, sequential, "avg_latency_ns")),
+                        first["avg_latency_ns"],
+                        second["avg_latency_ns"],
+                        format_number(delta(second, first, "avg_latency_ns")),
                     ),
                     (
                         "p99_latency_ns",
-                        sequential["p99_latency_ns"],
-                        stride["p99_latency_ns"],
-                        format_number(delta(stride, sequential, "p99_latency_ns")),
+                        first["p99_latency_ns"],
+                        second["p99_latency_ns"],
+                        format_number(delta(second, first, "p99_latency_ns")),
                     ),
                     (
                         "bank_conflict_ratio_pct",
-                        sequential["bank_conflict_ratio_pct"],
-                        stride["bank_conflict_ratio_pct"],
+                        first["bank_conflict_ratio_pct"],
+                        second["bank_conflict_ratio_pct"],
                         format_number(
-                            delta(stride, sequential, "bank_conflict_ratio_pct")
+                            delta(second, first, "bank_conflict_ratio_pct")
                         ),
                     ),
                     (
                         "throughput_txn_per_us",
-                        sequential["throughput_txn_per_us"],
-                        stride["throughput_txn_per_us"],
+                        first["throughput_txn_per_us"],
+                        second["throughput_txn_per_us"],
                         format_number(
-                            delta(stride, sequential, "throughput_txn_per_us")
+                            delta(second, first, "throughput_txn_per_us")
                         ),
                     ),
                 ),
@@ -478,11 +483,11 @@ def write_comparison(path, summary_rows):
                 "",
                 "## Engineering Interpretation",
                 "",
-                "- `sample_sequential` walks banks in a regular 4-byte sequence, "
-                "so adjacent transactions do not hit the same minimal bank.",
-                "- `sample_stride` uses 16-byte spacing, which maps consecutive "
-                "transactions back to the same minimal bank in this LT "
-                "abstraction.",
+                f"- This comparison reports `{second_name}` minus "
+                f"`{first_name}` using the first two traces in command-line "
+                "order.",
+                "- Workload names are labels from the normalized traces; the "
+                "replay tool does not require specific names.",
                 "- `timestamp_ns` is a normalized issue-time and ordering hint; "
                 "it is not gem5 timing and not cycle timing.",
                 "- This report is a trace replay MVP, not a cache, DRAM, AXI, "
@@ -507,14 +512,8 @@ def remove_output_dir(path):
 
 
 def validate_summary_rows(rows):
-    if len(rows) != 2:
-        raise TraceReplayError("MVP summary must contain exactly two workloads")
-
-    workloads = [row["workload_name"] for row in rows]
-    if workloads != ["sample_sequential", "sample_stride"]:
-        raise TraceReplayError(
-            "MVP summary workload order must be sample_sequential, sample_stride"
-        )
+    if not rows:
+        raise TraceReplayError("summary must contain at least one workload")
 
     for row in rows:
         if int(row["num_transactions"]) <= 0:
@@ -556,8 +555,8 @@ def main():
         print("[validate] Project B normalized trace schema PASS")
         return 0
 
-    if len(loaded_traces) != 2:
-        raise TraceReplayError("MVP replay expects exactly two trace inputs")
+    if len(loaded_traces) < 2:
+        raise TraceReplayError("MVP replay expects at least two trace inputs")
 
     output_dir = repo_path(args.output_dir)
     remove_output_dir(output_dir)

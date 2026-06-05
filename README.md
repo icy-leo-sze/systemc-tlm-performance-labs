@@ -16,7 +16,7 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
-| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay | `python3 examples/lt/tools/demo_performance_lab.py` |
+| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay | `python3 examples/lt/tools/demo_performance_lab.py` |
 | AT 仲裁实验室 | [`examples/at`](examples/at) | AT | TLM phase trace 和 arbitration policy sweep | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at` |
 
 详细说明：
@@ -24,13 +24,16 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 - LT 工作流：[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)
 - AT 工作流：[`examples/at/README.md`](examples/at/README.md)
 
-LT lab 现在有两个边界清晰的性能建模入口：
+LT lab 现在支持三类边界清晰的流量来源：
 
 1. 内建 synthetic memory access pattern sweep。
 2. normalized external trace replay MVP。
+3. gem5 SE-derived normalized traces。
 
-两者都保持同一条 `trace -> metrics -> summary.csv -> comparison.md` 链路。详细说明和
-已验证结果见 [`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
+三者都保持同一条 `trace -> metrics -> summary.csv -> comparison.md` 链路。Project C
+中 gem5 只作为 offline trace producer，SystemC/TLM lab 作为 replay and analysis
+backend。详细说明见
+[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
 
 ## 为什么有价值
 
@@ -99,7 +102,6 @@ LT 的 Renode 配置、生成文件和结果解释见
 - AT response scheduling。
 - outstanding transaction depth。
 - 等价 workload 下的 LT vs AT 对比。
-- normalized trace replay 到 gem5-derived trace replay 的离线扩展。
 
 这些都是未来方向，不是当前已完成能力。
 
@@ -112,6 +114,10 @@ LT 的 Renode 配置、生成文件和结果解释见
 - LT lab 是架构级工作流，不是最终 timing model。
 - AT lab 是 smoke / arbitration lab，不是 production interconnect model。
 - Project B 第一阶段不接真实 gem5，也不做 gem5-SystemC live co-simulation。
+- Project C 使用 gem5 SE mode 作为 offline trace producer，不做 gem5-SystemC live
+  co-simulation，也不做 full-system Linux。
+- Project C 的 `timestamp_ns` 是 normalized issue-time / ordering hint，不是 gem5
+  timing，也不是 cycle timing。
 - 如果本地存在 Doulos AT example，它只是 protocol-shape reference，不作为本项目
   mainline deliverable，也不由本仓库重新分发。
 
