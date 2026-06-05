@@ -16,7 +16,7 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
-| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine | `python3 examples/lt/tools/demo_performance_lab.py` |
+| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model | `python3 examples/lt/tools/demo_performance_lab.py` |
 | AT 仲裁实验室 | [`examples/at`](examples/at) | AT | TLM phase trace 和 arbitration policy sweep | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at` |
 
 详细说明：
@@ -24,12 +24,13 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 - LT 工作流：[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)
 - AT 工作流：[`examples/at/README.md`](examples/at/README.md)
 
-LT lab 现在支持四类边界清晰的流量来源和 replay backend：
+LT lab 现在支持五类边界清晰的流量来源和 replay backend：
 
 1. 内建 synthetic memory access pattern sweep。
 2. normalized external trace replay MVP。
 3. gem5 SE-derived normalized traces。
 4. standalone C++ trace replay engine。
+5. standalone C++ banked memory controller queueing model。
 
 这条演进线是：
 
@@ -37,6 +38,7 @@ LT lab 现在支持四类边界清晰的流量来源和 replay backend：
 Python trace replay
 -> gem5 SE-derived trace
 -> standalone C++ replay engine
+-> banked memory controller queueing model
 ```
 
 四者都保持同一条 `trace -> metrics -> summary.csv -> comparison.md` 链路。Project C
@@ -71,6 +73,41 @@ python3 examples/lt/tools/demo_cpp_trace_replay_lab.py
 ```
 
 Project D 不接 SystemC kernel，不做 gem5 live co-simulation，也不声称 cycle accuracy。
+
+## Project E：Banked Memory Controller Queueing Model
+
+Project E 是新增的 standalone C++ memory subsystem abstraction。它复用 normalized
+trace CSV 输入，把模型升级为 banked memory controller + queueing model，支持
+`bank_count`、`queue_depth`、per-bank `busy_until_ns`、address-to-bank mapping、
+row-buffer hit/miss、queue occupancy、tail latency、bank utilization、row hit ratio、
+throughput 和 queue full reject 统计。
+
+Python 只负责 demo orchestration、生成 demo input traces，以及从 C++ `summary.csv`
+生成 `comparison.md`。
+
+验证命令：
+
+```bash
+cmake -S examples/lt/banked_memory_controller_cpp \
+  -B build/examples/lt/banked_memory_controller_cpp
+cmake --build build/examples/lt/banked_memory_controller_cpp
+
+python3 examples/lt/tools/demo_banked_memory_controller_lab.py
+```
+
+默认输出：
+
+```text
+examples/lt/results/project_e_banked_memory_controller/trace.csv
+examples/lt/results/project_e_banked_memory_controller/summary.csv
+examples/lt/results/project_e_banked_memory_controller/comparison.md
+```
+
+详细说明见
+[`docs/project_e_banked_memory_controller_report.md`](docs/project_e_banked_memory_controller_report.md)。
+
+Project E 第一版不接 SystemC kernel，不做 gem5 live co-simulation，不做 JEDEC DRAM
+timing，不实现 AXI、CHI 或 NoC protocol，也不声称 cycle accuracy。
 
 ## 为什么有价值
 
@@ -128,6 +165,7 @@ LT 的 Renode 配置、生成文件和结果解释见
 | LT Phase 16A | `sequential` / `stride` / `hotspot` | `stride` 的 `bank_conflict_ratio_pct = 98.438%`，明显高于 `sequential` 和 `hotspot` |
 | LT Project B | `sample_sequential` / `sample_stride` | normalized trace replay 复现同类 bank conflict 观测：`sample_stride bank_conflict_ratio_pct = 98.438%` |
 | LT Project D | C++ replay vs Python replay | standalone C++ replay 输出 `trace.csv` / `summary.csv`，并通过 Python vs C++ replay summary equivalence check |
+| LT Project E | `sequential_scan` / `stride_scan` / `hot_bank_stress` | standalone C++ banked memory controller + queueing model：`sequential_scan p99 = 60.000 ns`，`stride_scan p99 = 424.000 ns`，`hot_bank_stress p99 = 960.000 ns` 且 `stalled_or_rejected_transactions = 68` |
 | AT | `fifo` | `complete_transactions = 4` |
 | AT | `priority_101` | `101xxx` 更快被接受：`101xxx avg = 1.000 ns`，`102xxx avg = 6.000 ns` |
 | AT | `priority_102` | `102xxx` 更快被接受：`102xxx avg = 1.000 ns`，`101xxx avg = 6.000 ns` |
@@ -158,6 +196,8 @@ LT 的 Renode 配置、生成文件和结果解释见
   timing，也不是 cycle timing。
 - Project D 是 standalone C++ trace replay engine，不接 SystemC kernel，不做 gem5
   live co-simulation，也不声称 cycle accuracy。
+- Project E 是 standalone C++ memory subsystem abstraction，不接 SystemC kernel，不做
+  gem5 live co-simulation，不做 JEDEC DRAM timing，也不声称 cycle accuracy。
 - 如果本地存在 Doulos AT example，它只是 protocol-shape reference，不作为本项目
   mainline deliverable，也不由本仓库重新分发。
 
