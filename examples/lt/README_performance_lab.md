@@ -67,6 +67,20 @@ Project B normalized trace replay MVP 使用独立的一键演示：
 python3 examples/lt/tools/demo_trace_replay_lab.py
 ```
 
+Project D standalone C++ trace replay MVP 使用独立 C++ binary 复刻 Project B /
+Project C 当前 Python replay 的核心 metrics 逻辑。Python 仍负责 demo orchestration、
+Python vs C++ equivalence check 和 `comparison.md` 生成：
+
+```bash
+cmake -S examples/lt/replay_cpp -B build/examples/lt/replay_cpp
+cmake --build build/examples/lt/replay_cpp
+
+python3 examples/lt/tools/demo_cpp_trace_replay_lab.py --no-build
+```
+
+Project D 只做 standalone normalized trace replay；第一版不接 SystemC kernel，不接
+gem5 live co-simulation，也不实现 cache、DRAM、AXI、CHI 或 NoC protocol model。
+
 Project C gem5 SE trace extraction MVP 使用外部 gem5 SE 先生成 normalized trace，再复用
 Project B replay：
 
@@ -125,6 +139,18 @@ python3 examples/lt/tools/run_trace_replay_lab.py \
   --trace examples/lt/traces/sample_stride_trace.csv
 
 python3 examples/lt/tools/demo_trace_replay_lab.py
+
+cmake -S examples/lt/replay_cpp -B build/examples/lt/replay_cpp
+cmake --build build/examples/lt/replay_cpp
+
+./build/examples/lt/replay_cpp/replay_cpp \
+  --trace examples/lt/traces/sample_sequential_trace.csv \
+  --trace examples/lt/traces/sample_stride_trace.csv \
+  --trace examples/lt/traces/gem5_sequential_trace.csv \
+  --trace examples/lt/traces/gem5_stride_trace.csv \
+  --output-dir examples/lt/results/cpp_trace_replay_lab
+
+python3 examples/lt/tools/demo_cpp_trace_replay_lab.py --no-build
 
 aarch64-linux-gnu-gcc -O0 -static \
   examples/lt/workloads/gem5_se/sequential_scan.c \
@@ -193,6 +219,12 @@ ln -sf ../build/lt bin/lt
   summary。
 - `examples/lt/results/trace_replay_lab/comparison.md`：Project B `sample_sequential`
   和 `sample_stride` 的对比说明。
+- `examples/lt/results/cpp_trace_replay_lab/trace.csv`：Project D standalone C++
+  replay engine 生成的合并 trace。
+- `examples/lt/results/cpp_trace_replay_lab/summary.csv`：Project D C++ engine
+  生成的一行一个 workload 的 summary，字段顺序与 Project B Python replay 对齐。
+- `examples/lt/results/cpp_trace_replay_lab/comparison.md`：Project D demo 从 C++
+  `summary.csv` 生成的对比说明。
 - `examples/lt/traces/gem5_sequential_trace.csv`：Project C 从 AArch64
   `sequential_scan` 经 gem5 SE marker flow 转成的 normalized trace。
 - `examples/lt/traces/gem5_stride_trace.csv`：Project C 从 AArch64 `stride_scan` 经
