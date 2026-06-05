@@ -12,3 +12,7 @@ phase_trace.csv
 
 # Local reference code, not redistributed
 references/doulos_at_example/
+
+# Generated experiment outputs
+examples/lt/results/
+examples/at/results/
