@@ -16,7 +16,7 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
-| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay | `python3 examples/lt/tools/demo_performance_lab.py` |
+| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine | `python3 examples/lt/tools/demo_performance_lab.py` |
 | AT 仲裁实验室 | [`examples/at`](examples/at) | AT | TLM phase trace 和 arbitration policy sweep | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at` |
 
 详细说明：
@@ -24,16 +24,53 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 - LT 工作流：[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)
 - AT 工作流：[`examples/at/README.md`](examples/at/README.md)
 
-LT lab 现在支持三类边界清晰的流量来源：
+LT lab 现在支持四类边界清晰的流量来源和 replay backend：
 
 1. 内建 synthetic memory access pattern sweep。
 2. normalized external trace replay MVP。
 3. gem5 SE-derived normalized traces。
+4. standalone C++ trace replay engine。
 
-三者都保持同一条 `trace -> metrics -> summary.csv -> comparison.md` 链路。Project C
+这条演进线是：
+
+```text
+Python trace replay
+-> gem5 SE-derived trace
+-> standalone C++ replay engine
+```
+
+四者都保持同一条 `trace -> metrics -> summary.csv -> comparison.md` 链路。Project C
 中 gem5 只作为 offline trace producer，SystemC/TLM lab 作为 replay and analysis
-backend。详细说明见
+backend。Project D 则把 Project B / Project C 当前 Python replay 的核心 metrics 逻辑
+迁移到 standalone C++ replay engine；Python 仍负责 demo orchestration、
+Python vs C++ metrics equivalence check 和 `comparison.md` 生成。详细说明见
 [`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
+
+## Project D：Standalone C++ Trace Replay Engine
+
+Project D 已在 Ubuntu 验证通过。它是一个 standalone C++ trace replay engine，输入
+Project B / Project C 的 normalized trace CSV，输出 `trace.csv` 和 `summary.csv`。
+Python 仍然负责 orchestration、Python vs C++ metrics equivalence check，以及
+`comparison.md` 生成。
+
+验证命令：
+
+```bash
+cmake -S examples/lt/replay_cpp -B build/examples/lt/replay_cpp
+cmake --build build/examples/lt/replay_cpp -j"$(nproc)"
+
+python3 examples/lt/tools/demo_cpp_trace_replay_lab.py
+```
+
+已验证输出：
+
+```text
+[replay-cpp] Project D standalone C++ trace replay PASS
+[compare] Python vs C++ replay summary equivalence PASS
+[demo-cpp] Project D Standalone C++ Trace Replay MVP PASS
+```
+
+Project D 不接 SystemC kernel，不做 gem5 live co-simulation，也不声称 cycle accuracy。
 
 ## 为什么有价值
 
@@ -90,6 +127,7 @@ LT 的 Renode 配置、生成文件和结果解释见
 | LT | `stride=4` 到 `stride=16` | `bank_conflict_ratio_pct` 从 `46.875%` 上升到 `98.438%`；`avg_delay_ns` 从 `164.688 ns` 上升到 `185.312 ns` |
 | LT Phase 16A | `sequential` / `stride` / `hotspot` | `stride` 的 `bank_conflict_ratio_pct = 98.438%`，明显高于 `sequential` 和 `hotspot` |
 | LT Project B | `sample_sequential` / `sample_stride` | normalized trace replay 复现同类 bank conflict 观测：`sample_stride bank_conflict_ratio_pct = 98.438%` |
+| LT Project D | C++ replay vs Python replay | standalone C++ replay 输出 `trace.csv` / `summary.csv`，并通过 Python vs C++ replay summary equivalence check |
 | AT | `fifo` | `complete_transactions = 4` |
 | AT | `priority_101` | `101xxx` 更快被接受：`101xxx avg = 1.000 ns`，`102xxx avg = 6.000 ns` |
 | AT | `priority_102` | `102xxx` 更快被接受：`102xxx avg = 1.000 ns`，`101xxx avg = 6.000 ns` |
@@ -118,6 +156,8 @@ LT 的 Renode 配置、生成文件和结果解释见
   co-simulation，也不做 full-system Linux。
 - Project C 的 `timestamp_ns` 是 normalized issue-time / ordering hint，不是 gem5
   timing，也不是 cycle timing。
+- Project D 是 standalone C++ trace replay engine，不接 SystemC kernel，不做 gem5
+  live co-simulation，也不声称 cycle accuracy。
 - 如果本地存在 Doulos AT example，它只是 protocol-shape reference，不作为本项目
   mainline deliverable，也不由本仓库重新分发。
 
