@@ -45,7 +45,7 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 | AT arbitration lab | `demo_at_lab.py`、`analyze_phase_trace.py`、`run_arbitration_sweep.py` | phase ordering、transaction completeness、policy sweep output | 当前能力 |
 | Project B replay | `run_trace_replay_lab.py`、`demo_trace_replay_lab.py` | normalized trace schema、deterministic sorting、summary invariants、demo PASS | 当前能力 |
 | Project C extraction | `run_gem5_se_trace_extraction.py`、`convert_gem5_se_trace.py` | gem5 marker extraction、normalized trace generation、Project B replay | 当前能力，依赖外部 gem5 和 target binary |
-| gem5 stats correlation | gem5 `stats.txt` vs replay metrics | marker count、memory access count、region stats、future correlation script | 未来工作 |
+| Project F gem5 stats correlation | gem5 `stats.txt` vs replay / Project E metrics | stats parsing、summary join、trend-level report、timing semantics boundary | 当前 MVP，依赖 Project C stats artifacts |
 | RTL / silicon / profiler correlation | 外部真实数据 vs model metrics | calibration dataset、error budget、correlation report | 未来工作 |
 
 ## 3. Internal Sanity Checks
@@ -198,19 +198,23 @@ Marker checks：
 - normalized `timestamp_ns` 单调且符合 `--timestamp-step-ns`。
 - 输出 trace 可通过 Project B `--validate-only`。
 
-## 7. Future gem5 Stats Correlation
+## 7. Project F gem5 Stats Correlation
 
-未来 gem5 correlation 不应直接声称已经完成。建议分阶段加入：
+Project F MVP 已加入 file-based qualitative / trend-level correlation report。它能解析
+gem5 `stats.txt`，join replay / Project E `summary.csv`，并生成
+`correlation_summary.csv` 和 `correlation_report.md`。后续更强 correlation 仍需分阶段加入：
 
 | 阶段 | 检查内容 | 产物 |
 | --- | --- | --- |
 | Stats presence | gem5 output dir 包含 `stats.txt`，且 run exit code 为 0。 | prerequisite report |
 | Count correlation | `PROJECT_C_MEM` marker count 与 workload loop count / selected stats counter 一致。 | marker count table |
 | Timing boundary | 明确区分 gem5 tick、normalized `timestamp_ns`、SystemC replay latency。 | timing semantics note |
-| Metric correlation | 比较 gem5 memory-related stats 与 replay metrics 的趋势，不比较绝对 cycle。 | correlation report |
+| Metric correlation | 比较 gem5 stats 与 replay metrics 的趋势，不比较绝对 cycle。 | Project F correlation report |
 | Calibration | 用真实或更高保真数据校准 latency 参数。 | calibrated model version |
 
-在这些步骤完成前，Project C 只能称为 gem5 SE offline trace producer flow。
+Project F 当前只能称为 qualitative / trend-level correlation report；在 calibration dataset
+和 error budget 完成前，不能声称 cycle accuracy、RTL correlation、silicon correlation
+或 profiler correlation。
 
 ## 8. Future RTL / Silicon / Profiler Correlation
 

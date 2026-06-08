@@ -191,7 +191,8 @@ modeling workflow、trace evidence、metrics、sweep、comparison 和 reproducib
 - 明确的 memory hierarchy model，包括 cache、memory controller、DRAM timing 或片上存储层级。
 - 更完整的 interconnect semantics，例如 ordering、backpressure、QoS、outstanding depth 和 arbitration fairness。
 - 更丰富的 trace metadata，例如 PC、symbol、region marker、read/write mix、thread/core id、raw simulator tick。
-- 与 gem5 `stats.txt` 的可解释 correlation，而不是只做 marker extraction。
+- 更深入的 gem5 `stats.txt` correlation；Project F 当前只做 qualitative /
+  trend-level report，不做 calibrated timing correlation。
 - 与 RTL / silicon / profiler 数据的误差度量和 calibration workflow。
 - CI/regression 中的 schema validation、demo checks、metric invariant checks 和 artifact diff policy。
 - 明确的 model versioning，保证不同阶段的 `summary.csv` 可追溯到对应模型假设。
