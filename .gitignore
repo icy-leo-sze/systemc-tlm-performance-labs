@@ -2,6 +2,8 @@ renode-bridge/bin/
 examples/*/bin/
 tests/*/bin/
 build
+examples/lt/results/
+examples/at/results/
 *.html
 *.xml
 tags
@@ -9,10 +11,11 @@ artifacts
 .cache
 compile_commands.json
 phase_trace.csv
+__pycache__/
+*.py[cod]
+.DS_Store
+._*
+*.tar.gz
 
 # Local reference code, not redistributed
 references/doulos_at_example/
-
-# Generated experiment outputs
-examples/lt/results/
-examples/at/results/

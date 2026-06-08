@@ -16,7 +16,7 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
-| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model | `python3 examples/lt/tools/demo_performance_lab.py` |
+| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model、gem5 stats trend correlation report | `python3 examples/lt/tools/demo_performance_lab.py` |
 | AT 仲裁实验室 | [`examples/at`](examples/at) | AT | TLM phase trace 和 arbitration policy sweep | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at` |
 
 详细说明：
@@ -24,13 +24,14 @@ workload -> trace -> metrics -> sweep -> comparison -> demo
 - LT 工作流：[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)
 - AT 工作流：[`examples/at/README.md`](examples/at/README.md)
 
-LT lab 现在支持五类边界清晰的流量来源和 replay backend：
+LT lab 现在支持六类边界清晰的流量来源、replay backend 和 trend report：
 
 1. 内建 synthetic memory access pattern sweep。
 2. normalized external trace replay MVP。
 3. gem5 SE-derived normalized traces。
 4. standalone C++ trace replay engine。
 5. standalone C++ banked memory controller queueing model。
+6. gem5 SE stats vs replay model trend correlation report。
 
 这条演进线是：
 
@@ -39,13 +40,16 @@ Python trace replay
 -> gem5 SE-derived trace
 -> standalone C++ replay engine
 -> banked memory controller queueing model
+-> gem5 stats trend correlation report
 ```
 
-四者都保持同一条 `trace -> metrics -> summary.csv -> comparison.md` 链路。Project C
-中 gem5 只作为 offline trace producer，SystemC/TLM lab 作为 replay and analysis
-backend。Project D 则把 Project B / Project C 当前 Python replay 的核心 metrics 逻辑
-迁移到 standalone C++ replay engine；Python 仍负责 demo orchestration、
-Python vs C++ metrics equivalence check 和 `comparison.md` 生成。详细说明见
+前四个 replay / model backend 都保持同一条 `trace -> metrics -> summary.csv ->
+comparison.md` 链路。Project C 中 gem5 只作为 offline trace producer，SystemC/TLM lab
+作为 replay and analysis backend。Project D 则把 Project B / Project C 当前 Python
+replay 的核心 metrics 逻辑迁移到 standalone C++ replay engine；Python 仍负责 demo
+orchestration、Python vs C++ metrics equivalence check 和 `comparison.md` 生成。
+Project F 在这些 generated summaries 之上生成 qualitative trend report，不改变既有
+输出语义。详细说明见
 [`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
 
 ## Project D：Standalone C++ Trace Replay Engine
@@ -109,6 +113,32 @@ examples/lt/results/project_e_banked_memory_controller/comparison.md
 Project E 第一版不接 SystemC kernel，不做 gem5 live co-simulation，不做 JEDEC DRAM
 timing，不实现 AXI、CHI 或 NoC protocol，也不声称 cycle accuracy。
 
+## Project F：gem5 Stats Trend Correlation Report
+
+Project F compares gem5 SE `stats.txt` with replay summaries at trend level and
+documents model boundaries. 它生成 `correlation_summary.csv` 和
+`correlation_report.md`，用于解释 `sequential` vs `stride` 的趋势是否一致。
+
+运行命令：
+
+```bash
+python3 examples/lt/tools/demo_gem5_stats_correlation_lab.py
+```
+
+默认输出：
+
+```text
+examples/lt/results/project_f_gem5_stats_correlation/correlation_summary.csv
+examples/lt/results/project_f_gem5_stats_correlation/correlation_report.md
+```
+
+详细说明见
+[`docs/project_f_gem5_stats_correlation_report.md`](docs/project_f_gem5_stats_correlation_report.md)。
+
+Project F 不做 gem5 live co-simulation，不声称 cycle accuracy，不声称 RTL / silicon /
+profiler correlation。Project B / C normalized trace 中的 `timestamp_ns` 仍然只是
+normalized issue-time / ordering hint，不是 gem5 timing。
+
 ## 为什么有价值
 
 LT 主线展示的是架构级性能分析工作流：workload knobs、transaction trace
@@ -166,6 +196,7 @@ LT 的 Renode 配置、生成文件和结果解释见
 | LT Project B | `sample_sequential` / `sample_stride` | normalized trace replay 复现同类 bank conflict 观测：`sample_stride bank_conflict_ratio_pct = 98.438%` |
 | LT Project D | C++ replay vs Python replay | standalone C++ replay 输出 `trace.csv` / `summary.csv`，并通过 Python vs C++ replay summary equivalence check |
 | LT Project E | `sequential_scan` / `stride_scan` / `hot_bank_stress` | standalone C++ banked memory controller + queueing model：`sequential_scan p99 = 60.000 ns`，`stride_scan p99 = 424.000 ns`，`hot_bank_stress p99 = 960.000 ns` 且 `stalled_or_rejected_transactions = 68` |
+| LT Project F | `sequential` vs `stride` | gem5 `stats.txt` 与 replay / Project E summary 生成 qualitative trend-level report；不比较绝对 cycle，不声称 RTL / silicon / profiler correlation |
 | AT | `fifo` | `complete_transactions = 4` |
 | AT | `priority_101` | `101xxx` 更快被接受：`101xxx avg = 1.000 ns`，`102xxx avg = 6.000 ns` |
 | AT | `priority_102` | `102xxx` 更快被接受：`102xxx avg = 1.000 ns`，`101xxx avg = 6.000 ns` |
@@ -198,6 +229,8 @@ LT 的 Renode 配置、生成文件和结果解释见
   live co-simulation，也不声称 cycle accuracy。
 - Project E 是 standalone C++ memory subsystem abstraction，不接 SystemC kernel，不做
   gem5 live co-simulation，不做 JEDEC DRAM timing，也不声称 cycle accuracy。
+- Project F 是 file-based trend report，不做 gem5 live co-simulation，不声称 cycle
+  accuracy，不声称 RTL、silicon 或 profiler correlation。
 - 如果本地存在 Doulos AT example，它只是 protocol-shape reference，不作为本项目
   mainline deliverable，也不由本仓库重新分发。
 
