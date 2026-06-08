@@ -182,6 +182,13 @@ python3 examples/at/tools/demo_at_lab.py \
 python3 examples/lt/tools/demo_performance_lab.py
 ```
 
+运行 headless regression harness：
+
+```bash
+bash scripts/run_all_regressions.sh
+cat artifacts/regression_summary.md
+```
+
 LT 的 Renode 配置、生成文件和结果解释见
 [`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
 

@@ -145,6 +145,14 @@ co-simulation，不声称 cycle accuracy，也不声称 RTL / silicon / profiler
 Project B / C normalized trace 中的 `timestamp_ns` 仍然只是 normalized issue-time /
 ordering hint，不是 gem5 timing。
 
+Project R headless regression harness 会串起 LT build、Project D/E/F hard gates 和
+Project B/C optional checks：
+
+```bash
+bash scripts/run_all_regressions.sh
+cat artifacts/regression_summary.md
+```
+
 ## 快速开始
 
 Ubuntu 示例，从仓库根目录执行；下面的 `<repo-root>` 表示当前仓库根目录。
