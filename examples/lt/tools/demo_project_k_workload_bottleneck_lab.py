@@ -1,0 +1,1019 @@
+#!/usr/bin/env python3
+
+import argparse
+import csv
+import math
+import shutil
+import subprocess
+import sys
+from collections import Counter, defaultdict
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+CPP_SOURCE_DIR = Path("examples/lt/banked_memory_controller_cpp")
+CPP_BUILD_DIR = Path("build/examples/lt/banked_memory_controller_cpp")
+DEFAULT_BINARY = CPP_BUILD_DIR / "banked_memory_controller"
+DEFAULT_INPUT_DIR = Path("build/examples/lt/project_k_workload_bottleneck_inputs")
+DEFAULT_OUTPUT_DIR = Path("examples/lt/results/project_k_workload_bottleneck")
+
+CORE_WORKLOADS = ("streaming", "stride", "hot_bank")
+BANK_COUNT_SWEEP = (4, 8, 16)
+DEFAULT_QUEUE_DEPTH = 16
+DEFAULT_ADDRESS_MAPPING = "word_interleave"
+DEFAULT_INTERLEAVE_BYTES = 4
+DEFAULT_ROW_SIZE_BYTES = 64
+DEFAULT_BASE_SERVICE_LATENCY_NS = 20.0
+DEFAULT_ROW_HIT_LATENCY_NS = 8.0
+DEFAULT_ROW_MISS_LATENCY_NS = 40.0
+CACHELINE_BYTES = 64
+FEATURE_BANK_COUNT = 4
+
+MAX_BANK_SHARE_HIGH = 0.65
+BANK_ENTROPY_LOW = 0.55
+BANK_CONFLICT_PROXY_HIGH = 0.35
+QUEUE_DELAY_RATIO_HIGH = 0.25
+SERVICE_DELAY_RATIO_HIGH = 0.65
+QUEUE_DELAY_RATIO_LOW = 0.20
+TAIL_RATIO_HIGH = 2.0
+BURSTINESS_SCORE_HIGH = 0.35
+MAX_QUEUE_OCCUPANCY_HIGH = 4
+
+CLAIM_BOUNDARY = (
+    "trend-level synthetic trace over Project E simplified banked memory "
+    "model; not GPU, silicon, PMU/perf/Nsight, AXI/CHI, GEMM, or "
+    "Transformer kernel evidence"
+)
+
+SUMMARY_FIELDS = (
+    "workload",
+    "total_requests",
+    "total_bytes",
+    "read_ratio",
+    "write_ratio",
+    "unique_cacheline_count",
+    "reuse_ratio",
+    "sequentiality_score",
+    "dominant_stride",
+    "burstiness_score",
+    "bank_entropy",
+    "max_bank_share",
+    "avg_latency_ns",
+    "p50_latency_ns",
+    "p95_latency_ns",
+    "throughput_txn_per_us",
+    "queue_delay_ratio",
+    "service_delay_ratio",
+    "bank_conflict_proxy",
+    "p95_p50_latency_ratio",
+    "bank_utilization_pct",
+    "avg_queue_occupancy",
+    "max_queue_occupancy",
+    "stalled_or_rejected_transactions",
+    "row_hit_ratio_pct",
+    "primary_bottleneck",
+    "confidence",
+    "evidence_fields",
+    "recommendation",
+    "claim_boundary",
+)
+
+SWEEP_FIELDS = (
+    "workload",
+    "bank_count",
+    "address_mapping",
+    "avg_latency_ns",
+    "p50_latency_ns",
+    "p95_latency_ns",
+    "throughput_txn_per_us",
+    "queue_delay_ratio",
+    "service_delay_ratio",
+    "bank_conflict_proxy",
+    "p95_p50_latency_ratio",
+    "primary_bottleneck",
+    "confidence",
+)
+
+DANGEROUS_CLEAN_PATHS = {
+    REPO_ROOT.resolve(),
+    (REPO_ROOT / "build").resolve(),
+    (REPO_ROOT / "examples").resolve(),
+    (REPO_ROOT / "examples" / "lt").resolve(),
+    (REPO_ROOT / "examples" / "lt" / "results").resolve(),
+}
+
+
+class DemoError(Exception):
+    pass
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run Project K workload-aware memory bottleneck characterization MVP."
+        )
+    )
+    parser.add_argument(
+        "--binary",
+        default=DEFAULT_BINARY,
+        type=Path,
+        help=(
+            "Project E C++ model binary. Defaults to "
+            "build/examples/lt/banked_memory_controller_cpp/banked_memory_controller."
+        ),
+    )
+    parser.add_argument(
+        "--input-dir",
+        default=DEFAULT_INPUT_DIR,
+        type=Path,
+        help="Generated Project K trace input directory under build/.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=DEFAULT_OUTPUT_DIR,
+        type=Path,
+        help="Project K output directory.",
+    )
+    parser.add_argument(
+        "--no-build",
+        action="store_true",
+        help="Do not build the Project E C++ binary automatically.",
+    )
+    return parser.parse_args()
+
+
+def repo_path(path):
+    path = Path(path)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def display_path(path):
+    path = Path(path)
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def remove_path(path):
+    path = repo_path(path)
+    if not path.exists():
+        return
+    resolved = path.resolve()
+    if resolved in DANGEROUS_CLEAN_PATHS:
+        raise DemoError(f"refusing to remove broad path: {display_path(path)}")
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def run_command(command):
+    print("[demo-project-k] run: " + " ".join(str(part) for part in command))
+    result = subprocess.run(
+        [str(part) for part in command],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    if result.returncode != 0:
+        raise DemoError(
+            "command failed with exit code "
+            f"{result.returncode}: {' '.join(str(part) for part in command)}"
+        )
+
+
+def ensure_binary(binary, no_build):
+    binary = repo_path(binary)
+    if binary.exists():
+        return binary
+
+    if no_build:
+        raise DemoError(
+            "Project E C++ model binary not found: "
+            f"{display_path(binary)}\n"
+            "Build it with:\n"
+            "  cmake -S examples/lt/banked_memory_controller_cpp "
+            "-B build/examples/lt/banked_memory_controller_cpp\n"
+            "  cmake --build build/examples/lt/banked_memory_controller_cpp"
+        )
+
+    run_command(["cmake", "-S", CPP_SOURCE_DIR, "-B", CPP_BUILD_DIR])
+    run_command(["cmake", "--build", CPP_BUILD_DIR])
+    if not binary.exists():
+        raise DemoError(
+            "Project E C++ model binary not found after build: "
+            f"{display_path(binary)}"
+        )
+    return binary
+
+
+def format_hex(value):
+    return f"0x{value:08X}"
+
+
+def hot_bank_timestamp(index):
+    burst_size = 8
+    burst_gap_ns = 96.0
+    in_burst_gap_ns = 2.0
+    burst = index // burst_size
+    offset = index % burst_size
+    return burst * burst_gap_ns + offset * in_burst_gap_ns
+
+
+def command_for_index(index, write_every):
+    return "WRITE" if write_every > 0 and index % write_every == write_every - 1 else "READ"
+
+
+def workload_specs():
+    return (
+        {
+            "workload": "streaming",
+            "count": 96,
+            "timestamp_fn": lambda index: index * 80.0,
+            "address_fn": lambda index: index * 4,
+            "command_fn": lambda index: command_for_index(index, 32),
+        },
+        {
+            "workload": "stride",
+            "count": 96,
+            "timestamp_fn": lambda index: index * 16.0,
+            "address_fn": lambda index: index * 8,
+            "command_fn": lambda index: command_for_index(index, 24),
+        },
+        {
+            "workload": "hot_bank",
+            "count": 96,
+            "timestamp_fn": hot_bank_timestamp,
+            "address_fn": lambda index: index * 64,
+            "command_fn": lambda index: command_for_index(index, 8),
+        },
+    )
+
+
+def write_workload_trace(path, spec):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=(
+                "workload_name",
+                "txn_id",
+                "timestamp_ns",
+                "initiator_id",
+                "command",
+                "address",
+                "size_bytes",
+            ),
+        )
+        writer.writeheader()
+        for index in range(spec["count"]):
+            writer.writerow(
+                {
+                    "workload_name": spec["workload"],
+                    "txn_id": index + 1,
+                    "timestamp_ns": f"{spec['timestamp_fn'](index):.3f}",
+                    "initiator_id": "101",
+                    "command": spec["command_fn"](index),
+                    "address": format_hex(spec["address_fn"](index)),
+                    "size_bytes": 4,
+                }
+            )
+
+
+def generate_workload_traces(input_dir):
+    input_dir = repo_path(input_dir)
+    remove_path(input_dir)
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    traces = []
+    for spec in workload_specs():
+        trace_path = input_dir / f"{spec['workload']}.csv"
+        write_workload_trace(trace_path, spec)
+        traces.append(trace_path)
+    return traces
+
+
+def trace_args(traces):
+    args = []
+    for trace in traces:
+        args.extend(("--trace", trace))
+    return args
+
+
+def read_csv_rows(path):
+    path = repo_path(path)
+    if not path.exists():
+        raise DemoError(f"CSV not found: {display_path(path)}")
+    with path.open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        rows = list(reader)
+    if not rows:
+        raise DemoError(f"CSV is empty: {display_path(path)}")
+    return rows
+
+
+def parse_float(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "NA":
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def parse_int_value(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "NA":
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def parse_address(value):
+    if value is None:
+        raise DemoError("trace row missing address")
+    try:
+        return int(str(value).strip(), 0)
+    except ValueError as error:
+        raise DemoError(f"invalid address value: {value}") from error
+
+
+def percentile(values, percentile_value):
+    if not values:
+        return None
+    values = sorted(values)
+    if len(values) == 1:
+        return values[0]
+    rank = round((percentile_value / 100.0) * (len(values) - 1))
+    rank = max(0, min(rank, len(values) - 1))
+    return values[rank]
+
+
+def fmt(value, digits=3):
+    if value is None:
+        return "NA"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return "NA"
+        return f"{value:.{digits}f}"
+    return str(value)
+
+
+def safe_ratio(numerator, denominator):
+    if denominator is None or denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def bank_id_for_address(address, bank_count=FEATURE_BANK_COUNT):
+    return (address // DEFAULT_INTERLEAVE_BYTES) % bank_count
+
+
+def normalized_entropy(counts, bucket_count):
+    total = sum(counts.values())
+    if total == 0 or bucket_count <= 1:
+        return None
+    entropy = 0.0
+    for count in counts.values():
+        if count == 0:
+            continue
+        probability = count / total
+        entropy -= probability * math.log(probability)
+    return entropy / math.log(bucket_count)
+
+
+def characterize_trace(trace_path):
+    rows = read_csv_rows(trace_path)
+    workload = rows[0].get("workload_name") or rows[0].get("workload") or Path(trace_path).stem
+
+    addresses = [parse_address(row.get("address") or row.get("masked_address")) for row in rows]
+    sizes = [parse_int_value(row.get("size_bytes")) or 4 for row in rows]
+    timestamps = [parse_float(row.get("timestamp_ns")) or 0.0 for row in rows]
+    commands = [(row.get("command") or "READ").upper() for row in rows]
+
+    total_requests = len(rows)
+    total_bytes = sum(sizes)
+    read_count = sum(1 for command in commands if command in ("READ", "R"))
+    write_count = sum(1 for command in commands if command in ("WRITE", "W"))
+    cachelines = [address // CACHELINE_BYTES for address in addresses]
+    unique_cacheline_count = len(set(cachelines))
+    seen_cachelines = set()
+    repeated_cacheline_accesses = 0
+    for cacheline in cachelines:
+        if cacheline in seen_cachelines:
+            repeated_cacheline_accesses += 1
+        seen_cachelines.add(cacheline)
+
+    deltas = [right - left for left, right in zip(addresses, addresses[1:])]
+    dominant_stride = Counter(deltas).most_common(1)[0][0] if deltas else None
+    sequential_hits = sum(
+        1 for index, delta in enumerate(deltas) if delta == sizes[index]
+    )
+    sequentiality_score = safe_ratio(sequential_hits, len(deltas)) or 0.0
+
+    gaps = [right - left for left, right in zip(timestamps, timestamps[1:])]
+    if gaps:
+        p50_gap = percentile(gaps, 50.0) or 0.0
+        p95_gap = percentile(gaps, 95.0) or 0.0
+        burstiness_score = 0.0 if p95_gap <= 0.0 else max(0.0, (p95_gap - p50_gap) / p95_gap)
+    else:
+        burstiness_score = 0.0
+
+    bank_counts = Counter(
+        bank_id_for_address(address, FEATURE_BANK_COUNT) for address in addresses
+    )
+    max_bank_share = (
+        max(bank_counts.values()) / total_requests if total_requests > 0 else None
+    )
+    bank_entropy = normalized_entropy(bank_counts, FEATURE_BANK_COUNT)
+
+    return {
+        "workload": workload,
+        "total_requests": total_requests,
+        "total_bytes": total_bytes,
+        "read_ratio": safe_ratio(read_count, total_requests),
+        "write_ratio": safe_ratio(write_count, total_requests),
+        "unique_cacheline_count": unique_cacheline_count,
+        "reuse_ratio": safe_ratio(repeated_cacheline_accesses, total_requests),
+        "sequentiality_score": sequentiality_score,
+        "dominant_stride": dominant_stride,
+        "burstiness_score": burstiness_score,
+        "bank_entropy": bank_entropy,
+        "max_bank_share": max_bank_share,
+    }
+
+
+def group_trace_rows(trace_rows):
+    grouped = defaultdict(list)
+    for row in trace_rows:
+        grouped[row.get("workload", "")].append(row)
+    return grouped
+
+
+def summarize_model_metrics(summary_rows, trace_rows):
+    traces_by_workload = group_trace_rows(trace_rows)
+    metrics = {}
+    for row in summary_rows:
+        workload = row.get("workload", "")
+        workload_trace_rows = traces_by_workload.get(workload, [])
+        accepted_rows = [
+            trace_row
+            for trace_row in workload_trace_rows
+            if trace_row.get("response_status") == "ACCEPTED"
+        ]
+        latencies = [
+            value
+            for value in (
+                parse_float(trace_row.get("total_latency_ns"))
+                for trace_row in accepted_rows
+            )
+            if value is not None
+        ]
+        queue_delays = [
+            value
+            for value in (
+                parse_float(trace_row.get("queue_delay_ns"))
+                for trace_row in accepted_rows
+            )
+            if value is not None
+        ]
+        service_delays = [
+            value
+            for value in (
+                parse_float(trace_row.get("service_latency_ns"))
+                for trace_row in accepted_rows
+            )
+            if value is not None
+        ]
+
+        latency_sum = sum(latencies) if latencies else None
+        queue_delay_sum = sum(queue_delays) if queue_delays else None
+        service_delay_sum = sum(service_delays) if service_delays else None
+        p50_latency = percentile(latencies, 50.0)
+        p95_latency = parse_float(row.get("p95_latency_ns"))
+        if p95_latency is None:
+            p95_latency = percentile(latencies, 95.0)
+        queue_delay_ratio = (
+            safe_ratio(queue_delay_sum, latency_sum)
+            if queue_delay_sum is not None and latency_sum is not None
+            else None
+        )
+        service_delay_ratio = (
+            safe_ratio(service_delay_sum, latency_sum)
+            if service_delay_sum is not None and latency_sum is not None
+            else None
+        )
+        queue_waits = sum(
+            1
+            for value in queue_delays
+            if value is not None and value > 0.0
+        )
+        bank_conflict_proxy = safe_ratio(queue_waits, len(accepted_rows))
+        p95_p50_ratio = (
+            safe_ratio(p95_latency, p50_latency)
+            if p95_latency is not None and p50_latency not in (None, 0.0)
+            else None
+        )
+
+        metrics[workload] = {
+            "workload": workload,
+            "avg_latency_ns": parse_float(row.get("avg_latency_ns")),
+            "p50_latency_ns": p50_latency,
+            "p95_latency_ns": p95_latency,
+            "throughput_txn_per_us": parse_float(row.get("throughput_txn_per_us")),
+            "queue_delay_ratio": queue_delay_ratio,
+            "service_delay_ratio": service_delay_ratio,
+            "bank_conflict_proxy": bank_conflict_proxy,
+            "p95_p50_latency_ratio": p95_p50_ratio,
+            "bank_utilization_pct": parse_float(row.get("bank_utilization_pct")),
+            "avg_queue_occupancy": parse_float(row.get("avg_queue_occupancy")),
+            "max_queue_occupancy": parse_int_value(row.get("max_queue_occupancy")),
+            "stalled_or_rejected_transactions": parse_int_value(
+                row.get("stalled_or_rejected_transactions")
+            ),
+            "row_hit_ratio_pct": parse_float(row.get("row_hit_ratio_pct")),
+        }
+    return metrics
+
+
+def has_high(value, threshold):
+    return value is not None and value >= threshold
+
+
+def has_low(value, threshold):
+    return value is not None and value <= threshold
+
+
+def evidence_text(evidence):
+    return "; ".join(f"{key}={fmt(value)}" for key, value in evidence.items())
+
+
+def score_confidence(score):
+    if score >= 3:
+        return "high"
+    if score == 2:
+        return "medium"
+    if score == 1:
+        return "low"
+    return "low"
+
+
+def rule_scores(features, metrics):
+    max_bank_share = features.get("max_bank_share")
+    bank_entropy = features.get("bank_entropy")
+    bank_conflict_proxy = metrics.get("bank_conflict_proxy")
+    tail_ratio = metrics.get("p95_p50_latency_ratio")
+    queue_delay_ratio = metrics.get("queue_delay_ratio")
+    service_delay_ratio = metrics.get("service_delay_ratio")
+    max_queue_occupancy = metrics.get("max_queue_occupancy")
+    rejected = metrics.get("stalled_or_rejected_transactions")
+    burstiness_score = features.get("burstiness_score")
+
+    bank_score = 0
+    bank_score += 1 if has_high(max_bank_share, MAX_BANK_SHARE_HIGH) else 0
+    bank_score += 1 if has_low(bank_entropy, BANK_ENTROPY_LOW) else 0
+    bank_score += 1 if has_high(bank_conflict_proxy, BANK_CONFLICT_PROXY_HIGH) else 0
+    bank_score += 1 if has_high(tail_ratio, TAIL_RATIO_HIGH) else 0
+
+    queue_score = 0
+    queue_score += 2 if has_high(queue_delay_ratio, QUEUE_DELAY_RATIO_HIGH) else 0
+    queue_score += 1 if max_queue_occupancy is not None and max_queue_occupancy >= MAX_QUEUE_OCCUPANCY_HIGH else 0
+    queue_score += 2 if rejected is not None and rejected > 0 else 0
+
+    service_score = 0
+    service_score += 2 if has_high(service_delay_ratio, SERVICE_DELAY_RATIO_HIGH) else 0
+    service_score += 1 if has_low(queue_delay_ratio, QUEUE_DELAY_RATIO_LOW) else 0
+
+    burst_score = 0
+    burst_score += 1 if has_high(burstiness_score, BURSTINESS_SCORE_HIGH) else 0
+    burst_score += 1 if has_high(tail_ratio, TAIL_RATIO_HIGH) else 0
+    burst_score += 1 if max_queue_occupancy is not None and max_queue_occupancy >= MAX_QUEUE_OCCUPANCY_HIGH else 0
+    burst_score += 1 if rejected is not None and rejected > 0 else 0
+
+    return {
+        "bank_conflict_bound": bank_score,
+        "queueing_bound": queue_score,
+        "service_latency_bound": service_score,
+        "burstiness_bound": burst_score,
+    }
+
+
+def attribution_for(features, metrics):
+    scores = rule_scores(features, metrics)
+    priority = {
+        "bank_conflict_bound": 0,
+        "queueing_bound": 1,
+        "burstiness_bound": 2,
+        "service_latency_bound": 3,
+    }
+    primary = max(scores, key=lambda name: (scores[name], -priority[name]))
+    score = scores[primary]
+    if score <= 0:
+        primary = "no_dominant_bottleneck"
+
+    recommendations = {
+        "bank_conflict_bound": (
+            "Expected direction: increase bank parallelism or spread addresses "
+            "across banks in the synthetic mapping before making stronger claims."
+        ),
+        "queueing_bound": (
+            "Expected direction: reduce injection pressure, smooth request issue, "
+            "or increase modeled buffering/bank parallelism in a bounded sweep."
+        ),
+        "service_latency_bound": (
+            "Expected direction: reduce modeled service latency or improve "
+            "synthetic locality; queue-depth changes alone may have limited effect."
+        ),
+        "burstiness_bound": (
+            "Expected direction: smooth burst issue pattern or evaluate buffering "
+            "as a future Project K.2 knob."
+        ),
+        "no_dominant_bottleneck": (
+            "Expected direction: treat as current-model baseline and compare "
+            "against stressed workloads."
+        ),
+    }
+    evidence_by_rule = {
+        "bank_conflict_bound": {
+            "max_bank_share": features.get("max_bank_share"),
+            "bank_entropy": features.get("bank_entropy"),
+            "bank_conflict_proxy": metrics.get("bank_conflict_proxy"),
+            "p95_p50_latency_ratio": metrics.get("p95_p50_latency_ratio"),
+            "bank_utilization_pct": metrics.get("bank_utilization_pct"),
+        },
+        "queueing_bound": {
+            "queue_delay_ratio": metrics.get("queue_delay_ratio"),
+            "avg_queue_occupancy": metrics.get("avg_queue_occupancy"),
+            "max_queue_occupancy": metrics.get("max_queue_occupancy"),
+            "stalled_or_rejected_transactions": metrics.get(
+                "stalled_or_rejected_transactions"
+            ),
+            "p95_latency_ns": metrics.get("p95_latency_ns"),
+        },
+        "service_latency_bound": {
+            "service_delay_ratio": metrics.get("service_delay_ratio"),
+            "avg_latency_ns": metrics.get("avg_latency_ns"),
+            "row_hit_ratio_pct": metrics.get("row_hit_ratio_pct"),
+            "queue_delay_ratio": metrics.get("queue_delay_ratio"),
+        },
+        "burstiness_bound": {
+            "burstiness_score": features.get("burstiness_score"),
+            "p95_p50_latency_ratio": metrics.get("p95_p50_latency_ratio"),
+            "max_queue_occupancy": metrics.get("max_queue_occupancy"),
+            "stalled_or_rejected_transactions": metrics.get(
+                "stalled_or_rejected_transactions"
+            ),
+        },
+        "no_dominant_bottleneck": {
+            "avg_latency_ns": metrics.get("avg_latency_ns"),
+            "p95_latency_ns": metrics.get("p95_latency_ns"),
+        },
+    }
+    return {
+        "primary_bottleneck": primary,
+        "confidence": score_confidence(score),
+        "evidence_fields": evidence_text(evidence_by_rule[primary]),
+        "recommendation": recommendations[primary],
+        "claim_boundary": CLAIM_BOUNDARY,
+    }
+
+
+def run_project_e(binary, traces, output_dir, bank_count):
+    output_dir = repo_path(output_dir)
+    remove_path(output_dir)
+    command = [
+        binary,
+        *trace_args(traces),
+        "--output-dir",
+        output_dir,
+        "--bank-count",
+        str(bank_count),
+        "--queue-depth",
+        str(DEFAULT_QUEUE_DEPTH),
+        "--address-mapping",
+        DEFAULT_ADDRESS_MAPPING,
+        "--base-service-latency-ns",
+        str(DEFAULT_BASE_SERVICE_LATENCY_NS),
+        "--row-hit-latency-ns",
+        str(DEFAULT_ROW_HIT_LATENCY_NS),
+        "--row-miss-latency-ns",
+        str(DEFAULT_ROW_MISS_LATENCY_NS),
+        "--row-size-bytes",
+        str(DEFAULT_ROW_SIZE_BYTES),
+        "--interleave-bytes",
+        str(DEFAULT_INTERLEAVE_BYTES),
+    ]
+    run_command(command)
+
+    summary_path = output_dir / "summary.csv"
+    trace_path = output_dir / "trace.csv"
+    if not summary_path.exists():
+        raise DemoError(f"Project E summary.csv not found: {display_path(summary_path)}")
+    if not trace_path.exists():
+        raise DemoError(f"Project E trace.csv not found: {display_path(trace_path)}")
+    return read_csv_rows(summary_path), read_csv_rows(trace_path)
+
+
+def build_summary_rows(features_by_workload, model_metrics):
+    rows = []
+    for workload in CORE_WORKLOADS:
+        features = features_by_workload.get(workload)
+        metrics = model_metrics.get(workload)
+        if features is None:
+            raise DemoError(f"missing features for workload: {workload}")
+        if metrics is None:
+            raise DemoError(f"missing model metrics for workload: {workload}")
+        attribution = attribution_for(features, metrics)
+        combined = {}
+        combined.update(features)
+        combined.update(metrics)
+        combined.update(attribution)
+        rows.append(combined)
+    return rows
+
+
+def write_csv(path, fieldnames, rows):
+    path = repo_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: fmt(row.get(field)) for field in fieldnames})
+    return path
+
+
+def markdown_cell(value):
+    return str(value).replace("\n", " ").replace("|", "\\|")
+
+
+def markdown_table(headers, rows):
+    lines = [
+        "| " + " | ".join(markdown_cell(header) for header in headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(markdown_cell(value) for value in row) + " |")
+    return lines
+
+
+def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
+    path = repo_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary_headers = (
+        "workload",
+        "primary_bottleneck",
+        "confidence",
+        "max_bank_share",
+        "bank_entropy",
+        "queue_delay_ratio",
+        "service_delay_ratio",
+        "p95_p50_latency_ratio",
+    )
+    sweep_headers = (
+        "workload",
+        "bank_count",
+        "avg_latency_ns",
+        "p95_latency_ns",
+        "bank_conflict_proxy",
+        "primary_bottleneck",
+    )
+
+    lines = [
+        "# Project K v0.1 Workload-Aware Memory Bottleneck Report",
+        "",
+        "状态：generated demo report。",
+        "",
+        "## Scope",
+        "",
+        "Project K v0.1 使用受控 synthetic workload traces 运行 Project E simplified "
+        "banked memory model，并输出趋势级 bottleneck attribution。它不是新的 C++ "
+        "memory model，也不修改 Project G/H/I/J。",
+        "",
+        "## Flow",
+        "",
+        "```text",
+        "synthetic workload trace",
+        "-> workload feature extraction",
+        "-> Project E simplified banked memory model run",
+        "-> model metric normalization",
+        "-> bottleneck attribution",
+        "-> minimal bank_count sweep",
+        "-> CSV / markdown report",
+        "-> demo PASS",
+        "```",
+        "",
+        "## Workloads",
+        "",
+        "- `streaming`: consecutive addresses, low-conflict baseline.",
+        "- `stride`: fixed stride addresses, exposes mapping sensitivity.",
+        "- `hot_bank`: addresses concentrated on one modeled bank with bursty issue.",
+        "",
+        "`tiled_gemm_like` and `attention_like_blocked` are future optional "
+        "synthetic access-pattern-inspired traces. They are not v0.1 hard gates.",
+        "",
+        "## Attribution Summary",
+        "",
+    ]
+    lines.extend(
+        markdown_table(
+            summary_headers,
+            ([fmt(row.get(field)) for field in summary_headers] for row in summary_rows),
+        )
+    )
+    lines.extend(
+        [
+            "",
+            "## Minimal Sweep",
+            "",
+            "v0.1 hard sweep only covers `bank_count = 4 / 8 / 16` with "
+            "`address_mapping = word_interleave`. Project E supports additional "
+            "mapping knobs, but `xor_folded`, queue-depth sweep, service-latency "
+            "sweep, and burstiness-mode sweep are future work.",
+            "",
+        ]
+    )
+    lines.extend(
+        markdown_table(
+            sweep_headers,
+            ([fmt(row.get(field)) for field in sweep_headers] for row in sweep_rows),
+        )
+    )
+    lines.extend(
+        [
+            "",
+            "## Generated Outputs",
+            "",
+        ]
+    )
+    for label, generated_path in generated_paths:
+        lines.append(f"- `{label}`: `{display_path(generated_path)}`")
+    lines.extend(
+        [
+            "",
+            "## Acceptance Result",
+            "",
+            f"- `core_workloads={len(CORE_WORKLOADS)}`",
+            f"- `summary_rows={len(summary_rows)}`",
+            f"- `sweep_rows={len(sweep_rows)}`",
+            "- `claim_boundary=PASS`",
+            "",
+            "## Supported Claims",
+            "",
+            "- 本项目展示一种受控 synthetic trace 方法，用于观察 workload access "
+            "pattern 如何影响当前 Project E simplified banked memory model。",
+            "- 本项目支持趋势级 bottleneck attribution，不支持真实硬件 accuracy claim。",
+            "- 本项目可以比较 `bank_count` 在当前模型定义下对 latency、queueing、"
+            "bank concentration proxy 和 throughput 的相对影响。",
+            "",
+            "## Unsupported Claims",
+            "",
+            "- 不声称真实 GPU 性能。",
+            "- 不声称 Apple Silicon 验证。",
+            "- 不声称 NVIDIA Nsight 集成。",
+            "- 不声称 ARM PMU 验证。",
+            "- 不声称 Linux perf 验证。",
+            "- 不声称 silicon validation。",
+            "- 不声称 production signoff。",
+            "- 不声称 full-system cycle accuracy。",
+            "- 不声称 full SoC validation。",
+            "- 不声称 AXI / CHI protocol compliance。",
+            "- 不声称真实 GEMM kernel performance。",
+            "- 不声称真实 Transformer / attention kernel performance。",
+            "- 不声称 GPU simulation。",
+            "",
+            "## Future Work",
+            "",
+            "- Add optional `tiled_gemm_like` and `attention_like_blocked` synthetic "
+            "patterns without claiming real AI kernel performance.",
+            "- Add `cacheline_interleave` and future `xor_folded` mapping sweeps only "
+            "after the model interface explicitly supports them.",
+            "- Add queue-depth, service-latency, and burstiness sweeps in Project K.2.",
+            "- Keep Project G/H/I/J unchanged unless a later validation-integration "
+            "task explicitly requests it.",
+            "",
+            f"Claim boundary: {CLAIM_BOUNDARY}.",
+            "",
+        ]
+    )
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def main():
+    args = parse_args()
+    binary = ensure_binary(args.binary, args.no_build)
+    input_dir = repo_path(args.input_dir)
+    output_dir = repo_path(args.output_dir)
+
+    remove_path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    traces = generate_workload_traces(input_dir)
+    features_by_workload = {
+        feature["workload"]: feature for feature in (characterize_trace(trace) for trace in traces)
+    }
+
+    sweep_rows = []
+    baseline_model_metrics = None
+    for bank_count in BANK_COUNT_SWEEP:
+        run_dir = output_dir / "model_runs" / f"bank_count_{bank_count}"
+        summary_rows, trace_rows = run_project_e(binary, traces, run_dir, bank_count)
+        model_metrics = summarize_model_metrics(summary_rows, trace_rows)
+        if bank_count == BANK_COUNT_SWEEP[0]:
+            baseline_model_metrics = model_metrics
+        for workload in CORE_WORKLOADS:
+            features = features_by_workload[workload]
+            metrics = model_metrics[workload]
+            attribution = attribution_for(features, metrics)
+            sweep_rows.append(
+                {
+                    "workload": workload,
+                    "bank_count": bank_count,
+                    "address_mapping": DEFAULT_ADDRESS_MAPPING,
+                    **metrics,
+                    "primary_bottleneck": attribution["primary_bottleneck"],
+                    "confidence": attribution["confidence"],
+                }
+            )
+
+    if baseline_model_metrics is None:
+        raise DemoError("baseline bank_count run did not produce model metrics")
+
+    summary_rows = build_summary_rows(features_by_workload, baseline_model_metrics)
+
+    summary_path = write_csv(
+        output_dir / "project_k_workload_bottleneck_summary.csv",
+        SUMMARY_FIELDS,
+        summary_rows,
+    )
+    sweep_path = write_csv(
+        output_dir / "project_k_what_if_sweep_summary.csv",
+        SWEEP_FIELDS,
+        sweep_rows,
+    )
+    report_path = write_generated_report(
+        output_dir / "project_k_report.md",
+        summary_rows,
+        sweep_rows,
+        (
+            ("workload_bottleneck_summary", summary_path),
+            ("what_if_sweep_summary", sweep_path),
+            ("generated_report", output_dir / "project_k_report.md"),
+        ),
+    )
+
+    summary_row_count = len(summary_rows)
+    sweep_row_count = len(sweep_rows)
+    claim_boundary_pass = (
+        summary_row_count >= len(CORE_WORKLOADS)
+        and sweep_row_count >= len(CORE_WORKLOADS) * len(BANK_COUNT_SWEEP)
+        and all(row.get("claim_boundary") == CLAIM_BOUNDARY for row in summary_rows)
+    )
+    if not claim_boundary_pass:
+        raise DemoError("Project K claim-boundary acceptance check failed")
+
+    print("[demo-project-k] outputs")
+    print(f"  - generated inputs: {display_path(input_dir)}")
+    print(f"  - summary: {display_path(summary_path)}")
+    print(f"  - sweep summary: {display_path(sweep_path)}")
+    print(f"  - generated report: {display_path(report_path)}")
+    print("Project K Workload-Aware Memory Bottleneck Characterization MVP PASS")
+    print(f"core_workloads={len(CORE_WORKLOADS)}")
+    print(f"summary_rows={summary_row_count}")
+    print(f"sweep_rows={sweep_row_count}")
+    print("claim_boundary=PASS")
+    print(
+        "scope: synthetic traces over Project E simplified banked memory model; "
+        "no GPU simulation, no real GEMM/attention performance, no PMU/perf/Nsight, "
+        "no silicon validation, no AXI/CHI protocol claim."
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except DemoError as error:
+        print(f"[demo-project-k] ERROR: {error}", file=sys.stderr)
+        raise SystemExit(1)
