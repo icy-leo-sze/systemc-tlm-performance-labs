@@ -278,6 +278,13 @@ python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
 workload 形态、memory-system stressor、可测症状和 attribution 连成了一个可展示的
 architecture case。
 
+Project K.2 在不修改 C++ / SystemC model 的前提下，把输入扩展到 5 类 synthetic
+patterns：保留 `streaming`、`stride`、`hot_bank` 三类 core workload，同时加入
+`tiled_gemm_like` 和 `attention_like_blocked` 两类 optional synthetic
+access-pattern-inspired traces，并把 sweep 扩展为 `bank_count` × `address_mapping`。
+我会把这一步解释成 mapping sensitivity 和 workload-shape coverage，而不是真实 GEMM、
+attention、GPU 或 LLM performance。
+
 Boundary：
 
 Project K 的 recommendation 只表示 expected direction，例如增加 modeled bank

@@ -19,7 +19,14 @@ DEFAULT_INPUT_DIR = Path("build/examples/lt/project_k_workload_bottleneck_inputs
 DEFAULT_OUTPUT_DIR = Path("examples/lt/results/project_k_workload_bottleneck")
 
 CORE_WORKLOADS = ("streaming", "stride", "hot_bank")
+OPTIONAL_SYNTHETIC_PATTERNS = ("tiled_gemm_like", "attention_like_blocked")
+ALL_WORKLOADS = CORE_WORKLOADS + OPTIONAL_SYNTHETIC_PATTERNS
 BANK_COUNT_SWEEP = (4, 8, 16)
+ADDRESS_MAPPING_SWEEP = (
+    "word_interleave",
+    "cacheline_interleave",
+    "row_interleave",
+)
 DEFAULT_QUEUE_DEPTH = 16
 DEFAULT_ADDRESS_MAPPING = "word_interleave"
 DEFAULT_INTERLEAVE_BYTES = 4
@@ -39,21 +46,31 @@ QUEUE_DELAY_RATIO_LOW = 0.20
 TAIL_RATIO_HIGH = 2.0
 BURSTINESS_SCORE_HIGH = 0.35
 MAX_QUEUE_OCCUPANCY_HIGH = 4
+REUSE_RATIO_LOW = 0.20
+PHASE_LOCALITY_LOW = 0.25
+ROW_HIT_RATIO_LOW = 25.0
+BANK_UTILIZATION_HIGH = 70.0
+SENSITIVITY_SCORE_LOW = 0.10
 
 CLAIM_BOUNDARY = (
     "trend-level synthetic trace over Project E simplified banked memory "
-    "model; not GPU, silicon, PMU/perf/Nsight, AXI/CHI, GEMM, or "
-    "Transformer kernel evidence"
+    "model; not GPU, silicon, PMU/perf/Nsight, AXI/CHI, GEMM, "
+    "Transformer, FlashAttention, or LLM inference evidence"
 )
 
 SUMMARY_FIELDS = (
     "workload",
+    "pattern_class",
+    "phase_count",
     "total_requests",
     "total_bytes",
     "read_ratio",
     "write_ratio",
     "unique_cacheline_count",
     "reuse_ratio",
+    "avg_reuse_distance",
+    "p50_reuse_distance",
+    "phase_locality_score",
     "sequentiality_score",
     "dominant_stride",
     "burstiness_score",
@@ -67,6 +84,8 @@ SUMMARY_FIELDS = (
     "service_delay_ratio",
     "bank_conflict_proxy",
     "p95_p50_latency_ratio",
+    "mapping_sensitivity_score",
+    "bank_count_sensitivity_score",
     "bank_utilization_pct",
     "avg_queue_occupancy",
     "max_queue_occupancy",
@@ -91,6 +110,7 @@ SWEEP_FIELDS = (
     "service_delay_ratio",
     "bank_conflict_proxy",
     "p95_p50_latency_ratio",
+    "sweep_delta_pct",
     "primary_bottleneck",
     "confidence",
 )
@@ -232,28 +252,204 @@ def command_for_index(index, write_every):
     return "WRITE" if write_every > 0 and index % write_every == write_every - 1 else "READ"
 
 
+def request_row(phase, timestamp_ns, address, command="READ", size_bytes=4):
+    return {
+        "phase": phase,
+        "timestamp_ns": timestamp_ns,
+        "address": address,
+        "command": command,
+        "size_bytes": size_bytes,
+    }
+
+
+def regular_requests(count, timestamp_fn, address_fn, command_fn, phase):
+    return [
+        request_row(
+            phase=phase,
+            timestamp_ns=timestamp_fn(index),
+            address=address_fn(index),
+            command=command_fn(index),
+        )
+        for index in range(count)
+    ]
+
+
+def tiled_gemm_like_requests():
+    requests = []
+    timestamp_ns = 0.0
+    step_ns = 6.0
+    a_base = 0x00100000
+    b_base = 0x00200000
+    c_base = 0x00300000
+    tile_m = 4
+    tile_n = 4
+    tile_k = 4
+
+    for index in range(tile_m * tile_k):
+        row = index // tile_k
+        col = index % tile_k
+        requests.append(
+            request_row(
+                "a_tile_read",
+                timestamp_ns,
+                a_base + (row * tile_k + col) * 4,
+                "READ",
+            )
+        )
+        timestamp_ns += step_ns
+
+    for index in range(tile_k * tile_n):
+        row = index // tile_n
+        col = index % tile_n
+        requests.append(
+            request_row(
+                "b_tile_read",
+                timestamp_ns,
+                b_base + col * DEFAULT_ROW_SIZE_BYTES + row * 4,
+                "READ",
+            )
+        )
+        timestamp_ns += step_ns
+
+    for index in range(8):
+        requests.append(
+            request_row(
+                "c_tile_read",
+                timestamp_ns,
+                c_base + index * 4,
+                "READ",
+            )
+        )
+        timestamp_ns += step_ns
+
+    for index in range(8):
+        requests.append(
+            request_row(
+                "c_tile_write",
+                timestamp_ns,
+                c_base + index * 4,
+                "WRITE",
+            )
+        )
+        timestamp_ns += step_ns
+
+    return requests
+
+
+def attention_like_blocked_requests():
+    requests = []
+    timestamp_ns = 0.0
+    step_ns = 5.0
+    q_base = 0x00400000
+    k_base = 0x00500000
+    v_base = 0x00600000
+    out_base = 0x00700000
+    block_items = 8
+
+    for index in range(block_items):
+        requests.append(
+            request_row(
+                "q_block_read",
+                timestamp_ns,
+                q_base + index * 4,
+                "READ",
+            )
+        )
+        timestamp_ns += step_ns
+
+    for repeat in range(3):
+        for index in range(block_items):
+            requests.append(
+                request_row(
+                    "k_block_repeated_read",
+                    timestamp_ns,
+                    k_base + index * 4,
+                    "READ",
+                )
+            )
+            timestamp_ns += step_ns if repeat == 0 else 2.0
+
+    for repeat in range(3):
+        for index in range(block_items):
+            requests.append(
+                request_row(
+                    "v_block_repeated_read",
+                    timestamp_ns,
+                    v_base + index * 4,
+                    "READ",
+                )
+            )
+            timestamp_ns += step_ns if repeat == 0 else 2.0
+
+    for index in range(block_items):
+        requests.append(
+            request_row(
+                "output_write",
+                timestamp_ns,
+                out_base + index * 4,
+                "WRITE",
+            )
+        )
+        timestamp_ns += step_ns
+
+    return requests
+
+
 def workload_specs():
     return (
         {
             "workload": "streaming",
-            "count": 96,
-            "timestamp_fn": lambda index: index * 80.0,
-            "address_fn": lambda index: index * 4,
-            "command_fn": lambda index: command_for_index(index, 32),
+            "pattern_class": "core_baseline",
+            "metadata": "consecutive addresses, smooth issue gap",
+            "requests": regular_requests(
+                96,
+                lambda index: index * 80.0,
+                lambda index: index * 4,
+                lambda index: command_for_index(index, 32),
+                "streaming_read",
+            ),
         },
         {
             "workload": "stride",
-            "count": 96,
-            "timestamp_fn": lambda index: index * 16.0,
-            "address_fn": lambda index: index * 8,
-            "command_fn": lambda index: command_for_index(index, 24),
+            "pattern_class": "core_stressor",
+            "metadata": "fixed stride addresses",
+            "requests": regular_requests(
+                96,
+                lambda index: index * 16.0,
+                lambda index: index * 8,
+                lambda index: command_for_index(index, 24),
+                "stride_read",
+            ),
         },
         {
             "workload": "hot_bank",
-            "count": 96,
-            "timestamp_fn": hot_bank_timestamp,
-            "address_fn": lambda index: index * 64,
-            "command_fn": lambda index: command_for_index(index, 8),
+            "pattern_class": "core_stressor",
+            "metadata": "modeled hot-bank concentration with bursty issue",
+            "requests": regular_requests(
+                96,
+                hot_bank_timestamp,
+                lambda index: index * 64,
+                lambda index: command_for_index(index, 8),
+                "hot_bank_burst",
+            ),
+        },
+        {
+            "workload": "tiled_gemm_like",
+            "pattern_class": "optional_synthetic_pattern",
+            "metadata": (
+                "synthetic tile_m=4 tile_n=4 tile_k=4 access-pattern-inspired "
+                "trace; no GEMM compute or FLOPS model"
+            ),
+            "requests": tiled_gemm_like_requests(),
+        },
+        {
+            "workload": "attention_like_blocked",
+            "pattern_class": "optional_synthetic_pattern",
+            "metadata": (
+                "synthetic Q/K/V blocked access-pattern-inspired trace; "
+                "no attention compute, softmax, FlashAttention, or LLM model"
+            ),
+            "requests": attention_like_blocked_requests(),
         },
     )
 
@@ -274,16 +470,16 @@ def write_workload_trace(path, spec):
             ),
         )
         writer.writeheader()
-        for index in range(spec["count"]):
+        for index, request in enumerate(spec["requests"]):
             writer.writerow(
                 {
                     "workload_name": spec["workload"],
                     "txn_id": index + 1,
-                    "timestamp_ns": f"{spec['timestamp_fn'](index):.3f}",
+                    "timestamp_ns": f"{request['timestamp_ns']:.3f}",
                     "initiator_id": "101",
-                    "command": spec["command_fn"](index),
-                    "address": format_hex(spec["address_fn"](index)),
-                    "size_bytes": 4,
+                    "command": request["command"],
+                    "address": format_hex(request["address"]),
+                    "size_bytes": request["size_bytes"],
                 }
             )
 
@@ -294,11 +490,17 @@ def generate_workload_traces(input_dir):
     input_dir.mkdir(parents=True, exist_ok=True)
 
     traces = []
+    metadata_by_workload = {}
     for spec in workload_specs():
         trace_path = input_dir / f"{spec['workload']}.csv"
         write_workload_trace(trace_path, spec)
         traces.append(trace_path)
-    return traces
+        metadata_by_workload[spec["workload"]] = {
+            "pattern_class": spec["pattern_class"],
+            "metadata": spec["metadata"],
+            "requests": spec["requests"],
+        }
+    return traces, metadata_by_workload
 
 
 def trace_args(traces):
@@ -401,9 +603,38 @@ def normalized_entropy(counts, bucket_count):
     return entropy / math.log(bucket_count)
 
 
-def characterize_trace(trace_path):
+def phase_locality_score(requests):
+    if not requests:
+        return None
+    phases = defaultdict(list)
+    for request in requests:
+        phases[request["phase"]].append(request["address"] // CACHELINE_BYTES)
+    locality_scores = []
+    for cachelines in phases.values():
+        if not cachelines:
+            continue
+        unique_count = len(set(cachelines))
+        locality_scores.append(1.0 - (unique_count / len(cachelines)))
+    if not locality_scores:
+        return None
+    return sum(locality_scores) / len(locality_scores)
+
+
+def reuse_distances_for_cachelines(cachelines):
+    last_seen = {}
+    distances = []
+    for index, cacheline in enumerate(cachelines):
+        if cacheline in last_seen:
+            distances.append(index - last_seen[cacheline])
+        last_seen[cacheline] = index
+    return distances
+
+
+def characterize_trace(trace_path, metadata):
     rows = read_csv_rows(trace_path)
     workload = rows[0].get("workload_name") or rows[0].get("workload") or Path(trace_path).stem
+    metadata = metadata or {}
+    requests = metadata.get("requests", [])
 
     addresses = [parse_address(row.get("address") or row.get("masked_address")) for row in rows]
     sizes = [parse_int_value(row.get("size_bytes")) or 4 for row in rows]
@@ -416,6 +647,7 @@ def characterize_trace(trace_path):
     write_count = sum(1 for command in commands if command in ("WRITE", "W"))
     cachelines = [address // CACHELINE_BYTES for address in addresses]
     unique_cacheline_count = len(set(cachelines))
+    reuse_distances = reuse_distances_for_cachelines(cachelines)
     seen_cachelines = set()
     repeated_cacheline_accesses = 0
     for cacheline in cachelines:
@@ -448,12 +680,19 @@ def characterize_trace(trace_path):
 
     return {
         "workload": workload,
+        "pattern_class": metadata.get("pattern_class", "unknown"),
+        "phase_count": len({request["phase"] for request in requests}) if requests else 1,
         "total_requests": total_requests,
         "total_bytes": total_bytes,
         "read_ratio": safe_ratio(read_count, total_requests),
         "write_ratio": safe_ratio(write_count, total_requests),
         "unique_cacheline_count": unique_cacheline_count,
         "reuse_ratio": safe_ratio(repeated_cacheline_accesses, total_requests),
+        "avg_reuse_distance": (
+            sum(reuse_distances) / len(reuse_distances) if reuse_distances else None
+        ),
+        "p50_reuse_distance": percentile(reuse_distances, 50.0),
+        "phase_locality_score": phase_locality_score(requests),
         "sequentiality_score": sequentiality_score,
         "dominant_stride": dominant_stride,
         "burstiness_score": burstiness_score,
@@ -587,6 +826,11 @@ def rule_scores(features, metrics):
     max_queue_occupancy = metrics.get("max_queue_occupancy")
     rejected = metrics.get("stalled_or_rejected_transactions")
     burstiness_score = features.get("burstiness_score")
+    reuse_ratio = features.get("reuse_ratio")
+    phase_locality = features.get("phase_locality_score")
+    row_hit_ratio = metrics.get("row_hit_ratio_pct")
+    bank_utilization = metrics.get("bank_utilization_pct")
+    bank_count_sensitivity = features.get("bank_count_sensitivity_score")
 
     bank_score = 0
     bank_score += 1 if has_high(max_bank_share, MAX_BANK_SHARE_HIGH) else 0
@@ -609,11 +853,26 @@ def rule_scores(features, metrics):
     burst_score += 1 if max_queue_occupancy is not None and max_queue_occupancy >= MAX_QUEUE_OCCUPANCY_HIGH else 0
     burst_score += 1 if rejected is not None and rejected > 0 else 0
 
+    locality_score = 0
+    locality_score += 1 if has_low(reuse_ratio, REUSE_RATIO_LOW) else 0
+    locality_score += 1 if has_low(phase_locality, PHASE_LOCALITY_LOW) else 0
+    locality_score += 1 if has_low(row_hit_ratio, ROW_HIT_RATIO_LOW) else 0
+    locality_score += 1 if has_high(service_delay_ratio, SERVICE_DELAY_RATIO_HIGH) else 0
+    locality_score += 1 if has_low(queue_delay_ratio, QUEUE_DELAY_RATIO_LOW) else 0
+
+    bandwidth_score = 0
+    bandwidth_score += 1 if has_high(bank_utilization, BANK_UTILIZATION_HIGH) else 0
+    bandwidth_score += 1 if has_high(queue_delay_ratio, QUEUE_DELAY_RATIO_HIGH) else 0
+    bandwidth_score += 1 if rejected is not None and rejected > 0 else 0
+    bandwidth_score += 1 if has_low(bank_count_sensitivity, SENSITIVITY_SCORE_LOW) else 0
+
     return {
         "bank_conflict_bound": bank_score,
         "queueing_bound": queue_score,
         "service_latency_bound": service_score,
         "burstiness_bound": burst_score,
+        "locality_loss_bound": locality_score,
+        "bandwidth_pressure_bound": bandwidth_score,
     }
 
 
@@ -622,8 +881,10 @@ def attribution_for(features, metrics):
     priority = {
         "bank_conflict_bound": 0,
         "queueing_bound": 1,
-        "burstiness_bound": 2,
-        "service_latency_bound": 3,
+        "bandwidth_pressure_bound": 2,
+        "burstiness_bound": 3,
+        "locality_loss_bound": 4,
+        "service_latency_bound": 5,
     }
     primary = max(scores, key=lambda name: (scores[name], -priority[name]))
     score = scores[primary]
@@ -645,7 +906,15 @@ def attribution_for(features, metrics):
         ),
         "burstiness_bound": (
             "Expected direction: smooth burst issue pattern or evaluate buffering "
-            "as a future Project K.2 knob."
+            "as a future Project K knob."
+        ),
+        "locality_loss_bound": (
+            "Expected direction: improve synthetic phase locality or tile/block "
+            "ordering in the current model; this is not a cache hit/miss claim."
+        ),
+        "bandwidth_pressure_bound": (
+            "Expected direction: treat the workload as modeled throughput-pressure "
+            "limited and compare bank/mapping alternatives before stronger claims."
         ),
         "no_dominant_bottleneck": (
             "Expected direction: treat as current-model baseline and compare "
@@ -683,6 +952,24 @@ def attribution_for(features, metrics):
                 "stalled_or_rejected_transactions"
             ),
         },
+        "locality_loss_bound": {
+            "reuse_ratio": features.get("reuse_ratio"),
+            "unique_cacheline_count": features.get("unique_cacheline_count"),
+            "row_hit_ratio_pct": metrics.get("row_hit_ratio_pct"),
+            "phase_locality_score": features.get("phase_locality_score"),
+            "service_delay_ratio": metrics.get("service_delay_ratio"),
+        },
+        "bandwidth_pressure_bound": {
+            "throughput_txn_per_us": metrics.get("throughput_txn_per_us"),
+            "bank_utilization_pct": metrics.get("bank_utilization_pct"),
+            "queue_delay_ratio": metrics.get("queue_delay_ratio"),
+            "stalled_or_rejected_transactions": metrics.get(
+                "stalled_or_rejected_transactions"
+            ),
+            "bank_count_sensitivity_score": features.get(
+                "bank_count_sensitivity_score"
+            ),
+        },
         "no_dominant_bottleneck": {
             "avg_latency_ns": metrics.get("avg_latency_ns"),
             "p95_latency_ns": metrics.get("p95_latency_ns"),
@@ -697,7 +984,7 @@ def attribution_for(features, metrics):
     }
 
 
-def run_project_e(binary, traces, output_dir, bank_count):
+def run_project_e(binary, traces, output_dir, bank_count, address_mapping):
     output_dir = repo_path(output_dir)
     remove_path(output_dir)
     command = [
@@ -710,7 +997,7 @@ def run_project_e(binary, traces, output_dir, bank_count):
         "--queue-depth",
         str(DEFAULT_QUEUE_DEPTH),
         "--address-mapping",
-        DEFAULT_ADDRESS_MAPPING,
+        address_mapping,
         "--base-service-latency-ns",
         str(DEFAULT_BASE_SERVICE_LATENCY_NS),
         "--row-hit-latency-ns",
@@ -733,15 +1020,70 @@ def run_project_e(binary, traces, output_dir, bank_count):
     return read_csv_rows(summary_path), read_csv_rows(trace_path)
 
 
-def build_summary_rows(features_by_workload, model_metrics):
+def add_sweep_delta_pct(sweep_rows):
+    baseline_by_workload = {}
+    for row in sweep_rows:
+        if (
+            row["bank_count"] == BANK_COUNT_SWEEP[0]
+            and row["address_mapping"] == DEFAULT_ADDRESS_MAPPING
+        ):
+            baseline_by_workload[row["workload"]] = row.get("p95_latency_ns")
+
+    for row in sweep_rows:
+        baseline = baseline_by_workload.get(row["workload"])
+        p95_latency = row.get("p95_latency_ns")
+        if baseline in (None, 0.0) or p95_latency is None:
+            row["sweep_delta_pct"] = None
+        else:
+            row["sweep_delta_pct"] = 100.0 * (p95_latency - baseline) / baseline
+
+
+def sensitivity_score(values):
+    clean_values = [value for value in values if value is not None]
+    if len(clean_values) < 2:
+        return None
+    high = max(clean_values)
+    low = min(clean_values)
+    if high == 0.0:
+        return None
+    return (high - low) / high
+
+
+def compute_sensitivity_by_workload(sweep_rows):
+    grouped = defaultdict(list)
+    for row in sweep_rows:
+        grouped[row["workload"]].append(row)
+
+    sensitivity = {}
+    for workload, rows in grouped.items():
+        mapping_values = [
+            row.get("p95_latency_ns")
+            for row in rows
+            if row["bank_count"] == BANK_COUNT_SWEEP[0]
+        ]
+        bank_count_values = [
+            row.get("p95_latency_ns")
+            for row in rows
+            if row["address_mapping"] == DEFAULT_ADDRESS_MAPPING
+        ]
+        sensitivity[workload] = {
+            "mapping_sensitivity_score": sensitivity_score(mapping_values),
+            "bank_count_sensitivity_score": sensitivity_score(bank_count_values),
+        }
+    return sensitivity
+
+
+def build_summary_rows(features_by_workload, model_metrics, sensitivity_by_workload):
     rows = []
-    for workload in CORE_WORKLOADS:
+    for workload in ALL_WORKLOADS:
         features = features_by_workload.get(workload)
         metrics = model_metrics.get(workload)
         if features is None:
             raise DemoError(f"missing features for workload: {workload}")
         if metrics is None:
             raise DemoError(f"missing model metrics for workload: {workload}")
+        features = dict(features)
+        features.update(sensitivity_by_workload.get(workload, {}))
         attribution = attribution_for(features, metrics)
         combined = {}
         combined.update(features)
@@ -782,45 +1124,52 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
 
     summary_headers = (
         "workload",
+        "pattern_class",
         "primary_bottleneck",
         "confidence",
         "max_bank_share",
         "bank_entropy",
+        "phase_locality_score",
         "queue_delay_ratio",
         "service_delay_ratio",
+        "mapping_sensitivity_score",
+        "bank_count_sensitivity_score",
         "p95_p50_latency_ratio",
     )
     sweep_headers = (
         "workload",
         "bank_count",
+        "address_mapping",
         "avg_latency_ns",
         "p95_latency_ns",
         "bank_conflict_proxy",
+        "sweep_delta_pct",
         "primary_bottleneck",
     )
 
     lines = [
-        "# Project K v0.1 Workload-Aware Memory Bottleneck Report",
+        "# Project K.2 Workload-Aware Memory Bottleneck Report",
         "",
         "状态：generated demo report。",
         "",
         "## Scope",
         "",
-        "Project K v0.1 使用受控 synthetic workload traces 运行 Project E simplified "
-        "banked memory model，并输出趋势级 bottleneck attribution。它不是新的 C++ "
-        "memory model，也不修改 Project G/H/I/J。",
+        "Project K.2 使用受控 synthetic workload traces 运行 Project E simplified "
+        "banked memory model，并输出趋势级 bottleneck attribution 和 mapping "
+        "sensitivity sweep。它不是新的 C++ memory model，也不修改 Project G/H/I/J。",
         "",
         "## Architecture Summary",
         "",
-        "Project K frames the architecture question as a bounded evidence chain: "
+        "Project K.2 frames the architecture question as a bounded evidence chain: "
         "`workload access pattern -> memory-system stressor -> measurable symptom "
-        "-> bottleneck attribution -> bounded recommendation`. The demo uses "
-        "`streaming` as a low-pressure baseline, `stride` as a bank-mapping "
-        "sensitivity case, and `hot_bank` as a concentrated queue-pressure case.",
+        "-> bottleneck attribution -> bounded recommendation`. The demo keeps "
+        "`streaming`, `stride`, and `hot_bank` as core workloads, then adds "
+        "`tiled_gemm_like` and `attention_like_blocked` as optional synthetic "
+        "access-pattern-inspired traces.",
         "",
         "Recommendations in this report are expected directions inside the "
         "Project E simplified model. They are not hardware performance claims, "
-        "not GPU claims, and not AI-kernel performance claims.",
+        "not GPU claims, and not GEMM / attention / AI-kernel performance claims.",
         "",
         "## Flow",
         "",
@@ -830,7 +1179,7 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
         "-> Project E simplified banked memory model run",
         "-> model metric normalization",
         "-> bottleneck attribution",
-        "-> minimal bank_count sweep",
+        "-> bank_count and address_mapping sweep",
         "-> CSV / markdown report",
         "-> demo PASS",
         "```",
@@ -840,9 +1189,13 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
         "- `streaming`: consecutive addresses, low-conflict baseline.",
         "- `stride`: fixed stride addresses, exposes mapping sensitivity.",
         "- `hot_bank`: addresses concentrated on one modeled bank with bursty issue.",
+        "- `tiled_gemm_like`: synthetic A/B/C tile read/write pattern; no matrix "
+        "multiply compute, FLOPS, or GEMM throughput model.",
+        "- `attention_like_blocked`: synthetic Q/K/V repeated-read plus output-write "
+        "pattern; no softmax, FlashAttention, Transformer, or LLM inference model.",
         "",
-        "`tiled_gemm_like` and `attention_like_blocked` are future optional "
-        "synthetic access-pattern-inspired traces. They are not v0.1 hard gates.",
+        "`tiled_gemm_like` and `attention_like_blocked` are optional synthetic "
+        "access-pattern-inspired traces. They are not real AI kernel workloads.",
         "",
         "## Metric Split",
         "",
@@ -850,7 +1203,7 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
         "read/write mix, locality proxies, stride, burstiness, and modeled bank "
         "concentration. Model-derived metrics describe the symptoms after replay: "
         "latency, throughput, queue delay, service delay, bank-conflict proxy, "
-        "and tail amplification.",
+        "tail amplification, and sweep sensitivity.",
         "",
         "## Attribution Summary",
         "",
@@ -872,15 +1225,19 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
             "increase same-bank waiting.",
             "- `hot_bank`: concentrated addresses plus bursty issue can saturate the "
             "modeled bank queue, increasing tail latency and rejected transactions.",
+            "- `tiled_gemm_like`: synthetic A/B/C tile phases expose locality proxy "
+            "and mapping sensitivity without modeling matrix multiply compute.",
+            "- `attention_like_blocked`: synthetic Q/K/V repeated-read phases expose "
+            "blocked reuse and output-write pressure without modeling attention.",
             "",
             "Each row keeps `evidence_fields` in the CSV so the primary bottleneck "
             "can be audited without treating the attribution as a black-box model.",
             "",
-            "## Minimal Sweep",
+            "## K.2 Sweep",
             "",
-            "v0.1 hard sweep only covers `bank_count = 4 / 8 / 16` with "
-            "`address_mapping = word_interleave`. Project E supports additional "
-            "mapping knobs, but `xor_folded`, queue-depth sweep, service-latency "
+            "K.2 covers `bank_count = 4 / 8 / 16` and "
+            "`address_mapping = word_interleave / cacheline_interleave / "
+            "row_interleave`. `xor_folded`, queue-depth sweep, service-latency "
             "sweep, and burstiness-mode sweep are future work.",
             "",
         ]
@@ -906,6 +1263,8 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
             "## Acceptance Result",
             "",
             f"- `core_workloads={len(CORE_WORKLOADS)}`",
+            f"- `optional_synthetic_patterns={len(OPTIONAL_SYNTHETIC_PATTERNS)}`",
+            f"- `total_workloads={len(ALL_WORKLOADS)}`",
             f"- `summary_rows={len(summary_rows)}`",
             f"- `sweep_rows={len(sweep_rows)}`",
             "- `claim_boundary=PASS`",
@@ -915,8 +1274,8 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
             "- 本项目展示一种受控 synthetic trace 方法，用于观察 workload access "
             "pattern 如何影响当前 Project E simplified banked memory model。",
             "- 本项目支持趋势级 bottleneck attribution，不支持真实硬件 accuracy claim。",
-            "- 本项目可以比较 `bank_count` 在当前模型定义下对 latency、queueing、"
-            "bank concentration proxy 和 throughput 的相对影响。",
+            "- 本项目可以比较 `bank_count` 和 `address_mapping` 在当前模型定义下对 "
+            "latency、queueing、bank concentration proxy 和 throughput 的相对影响。",
             "",
             "## Unsupported Claims",
             "",
@@ -932,15 +1291,16 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
             "- 不声称 AXI / CHI protocol compliance。",
             "- 不声称真实 GEMM kernel performance。",
             "- 不声称真实 Transformer / attention kernel performance。",
+            "- 不声称 FlashAttention 或 LLM inference performance。",
             "- 不声称 GPU simulation。",
             "",
             "## Future Work",
             "",
-            "- Add optional `tiled_gemm_like` and `attention_like_blocked` synthetic "
-            "patterns without claiming real AI kernel performance.",
-            "- Add `cacheline_interleave` and future `xor_folded` mapping sweeps only "
-            "after the model interface explicitly supports them.",
-            "- Add queue-depth, service-latency, and burstiness sweeps in Project K.2.",
+            "- Keep optional synthetic patterns small and bounded.",
+            "- Add future `xor_folded` mapping only after the model interface "
+            "explicitly supports it.",
+            "- Add queue-depth, service-latency, and burstiness sweeps in a later "
+            "Project K step.",
             "- Keep Project G/H/I/J unchanged unless a later validation-integration "
             "task explicitly requests it.",
             "",
@@ -961,38 +1321,66 @@ def main():
     remove_path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    traces = generate_workload_traces(input_dir)
+    traces, metadata_by_workload = generate_workload_traces(input_dir)
     features_by_workload = {
-        feature["workload"]: feature for feature in (characterize_trace(trace) for trace in traces)
+        feature["workload"]: feature
+        for feature in (
+            characterize_trace(
+                trace,
+                metadata_by_workload.get(Path(trace).stem, {}),
+            )
+            for trace in traces
+        )
     }
 
     sweep_rows = []
     baseline_model_metrics = None
-    for bank_count in BANK_COUNT_SWEEP:
-        run_dir = output_dir / "model_runs" / f"bank_count_{bank_count}"
-        summary_rows, trace_rows = run_project_e(binary, traces, run_dir, bank_count)
-        model_metrics = summarize_model_metrics(summary_rows, trace_rows)
-        if bank_count == BANK_COUNT_SWEEP[0]:
-            baseline_model_metrics = model_metrics
-        for workload in CORE_WORKLOADS:
-            features = features_by_workload[workload]
-            metrics = model_metrics[workload]
-            attribution = attribution_for(features, metrics)
-            sweep_rows.append(
-                {
-                    "workload": workload,
-                    "bank_count": bank_count,
-                    "address_mapping": DEFAULT_ADDRESS_MAPPING,
-                    **metrics,
-                    "primary_bottleneck": attribution["primary_bottleneck"],
-                    "confidence": attribution["confidence"],
-                }
+    for address_mapping in ADDRESS_MAPPING_SWEEP:
+        for bank_count in BANK_COUNT_SWEEP:
+            run_dir = (
+                output_dir
+                / "model_runs"
+                / address_mapping
+                / f"bank_count_{bank_count}"
             )
+            summary_rows, trace_rows = run_project_e(
+                binary,
+                traces,
+                run_dir,
+                bank_count,
+                address_mapping,
+            )
+            model_metrics = summarize_model_metrics(summary_rows, trace_rows)
+            if (
+                bank_count == BANK_COUNT_SWEEP[0]
+                and address_mapping == DEFAULT_ADDRESS_MAPPING
+            ):
+                baseline_model_metrics = model_metrics
+            for workload in ALL_WORKLOADS:
+                features = features_by_workload[workload]
+                metrics = model_metrics[workload]
+                attribution = attribution_for(features, metrics)
+                sweep_rows.append(
+                    {
+                        "workload": workload,
+                        "bank_count": bank_count,
+                        "address_mapping": address_mapping,
+                        **metrics,
+                        "primary_bottleneck": attribution["primary_bottleneck"],
+                        "confidence": attribution["confidence"],
+                    }
+                )
 
     if baseline_model_metrics is None:
         raise DemoError("baseline bank_count run did not produce model metrics")
 
-    summary_rows = build_summary_rows(features_by_workload, baseline_model_metrics)
+    add_sweep_delta_pct(sweep_rows)
+    sensitivity_by_workload = compute_sensitivity_by_workload(sweep_rows)
+    summary_rows = build_summary_rows(
+        features_by_workload,
+        baseline_model_metrics,
+        sensitivity_by_workload,
+    )
 
     summary_path = write_csv(
         output_dir / "project_k_workload_bottleneck_summary.csv",
@@ -1018,8 +1406,9 @@ def main():
     summary_row_count = len(summary_rows)
     sweep_row_count = len(sweep_rows)
     claim_boundary_pass = (
-        summary_row_count >= len(CORE_WORKLOADS)
-        and sweep_row_count >= len(CORE_WORKLOADS) * len(BANK_COUNT_SWEEP)
+        summary_row_count >= len(ALL_WORKLOADS)
+        and sweep_row_count
+        >= len(ALL_WORKLOADS) * len(BANK_COUNT_SWEEP) * len(ADDRESS_MAPPING_SWEEP)
         and all(row.get("claim_boundary") == CLAIM_BOUNDARY for row in summary_rows)
     )
     if not claim_boundary_pass:
@@ -1032,6 +1421,8 @@ def main():
     print(f"  - generated report: {display_path(report_path)}")
     print("Project K Workload-Aware Memory Bottleneck Characterization MVP PASS")
     print(f"core_workloads={len(CORE_WORKLOADS)}")
+    print(f"optional_synthetic_patterns={len(OPTIONAL_SYNTHETIC_PATTERNS)}")
+    print(f"total_workloads={len(ALL_WORKLOADS)}")
     print(f"summary_rows={summary_row_count}")
     print(f"sweep_rows={sweep_row_count}")
     print("claim_boundary=PASS")

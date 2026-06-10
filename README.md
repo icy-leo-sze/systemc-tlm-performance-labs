@@ -171,9 +171,11 @@ normalized issue-time / ordering hint，不是 gem5 timing。
 
 ## Project K：Workload-Aware Bottleneck Characterization
 
-Project K 用三类 synthetic workload traces（`streaming`、`stride`、`hot_bank`）复用
-Project E simplified banked memory model，把 access pattern 转成 trace-derived features、
-model-derived metrics、bottleneck attribution 和 bounded recommendation。
+Project K 用三类 core synthetic workload traces（`streaming`、`stride`、`hot_bank`）和两类
+optional synthetic access-pattern-inspired traces（`tiled_gemm_like`、
+`attention_like_blocked`）复用 Project E simplified banked memory model，把 access
+pattern 转成 trace-derived features、model-derived metrics、bottleneck attribution、
+mapping sensitivity sweep 和 bounded recommendation。
 
 运行命令：
 
@@ -190,8 +192,8 @@ examples/lt/results/project_k_workload_bottleneck/project_k_report.md
 ```
 
 Project K 只支持 synthetic trace 上的趋势级 bottleneck attribution，不声称真实 GPU
-性能、真实 GEMM / attention kernel performance、PMU / perf / Nsight correlation、
-silicon validation 或 AXI / CHI protocol compliance。
+性能、真实 GEMM / attention / FlashAttention / LLM kernel performance、PMU / perf /
+Nsight correlation、silicon validation 或 AXI / CHI protocol compliance。
 
 ## 为什么有价值
 
