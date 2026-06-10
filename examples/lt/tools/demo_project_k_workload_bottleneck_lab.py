@@ -36,6 +36,11 @@ DEFAULT_ROW_HIT_LATENCY_NS = 8.0
 DEFAULT_ROW_MISS_LATENCY_NS = 40.0
 CACHELINE_BYTES = 64
 FEATURE_BANK_COUNT = 4
+PROJECT_K_SCHEMA_VERSION = "k0.2"
+EXPECTED_CORE_WORKLOADS = 3
+EXPECTED_OPTIONAL_SYNTHETIC_PATTERNS = 2
+EXPECTED_TOTAL_WORKLOADS = 5
+EXPECTED_SWEEP_ROWS = 45
 
 MAX_BANK_SHARE_HIGH = 0.65
 BANK_ENTROPY_LOW = 0.55
@@ -56,6 +61,49 @@ CLAIM_BOUNDARY = (
     "trend-level synthetic trace over Project E simplified banked memory "
     "model; not GPU, silicon, PMU/perf/Nsight, AXI/CHI, GEMM, "
     "Transformer, FlashAttention, or LLM inference evidence"
+)
+
+STABLE_SUMMARY_FIELDS = (
+    "workload",
+    "pattern_class",
+    "phase_count",
+    "total_requests",
+    "total_bytes",
+    "read_ratio",
+    "write_ratio",
+    "unique_cacheline_count",
+    "reuse_ratio",
+    "sequentiality_score",
+    "dominant_stride",
+    "burstiness_score",
+    "bank_entropy",
+    "max_bank_share",
+    "avg_latency_ns",
+    "p50_latency_ns",
+    "p95_latency_ns",
+    "throughput_txn_per_us",
+    "queue_delay_ratio",
+    "service_delay_ratio",
+    "bank_conflict_proxy",
+    "p95_p50_latency_ratio",
+    "bank_utilization_pct",
+    "avg_queue_occupancy",
+    "max_queue_occupancy",
+    "stalled_or_rejected_transactions",
+    "row_hit_ratio_pct",
+    "primary_bottleneck",
+    "confidence",
+    "evidence_fields",
+    "recommendation",
+    "claim_boundary",
+)
+
+EXPERIMENTAL_SUMMARY_FIELDS = (
+    "avg_reuse_distance",
+    "p50_reuse_distance",
+    "phase_locality_score",
+    "mapping_sensitivity_score",
+    "bank_count_sensitivity_score",
 )
 
 SUMMARY_FIELDS = (
@@ -98,7 +146,7 @@ SUMMARY_FIELDS = (
     "claim_boundary",
 )
 
-SWEEP_FIELDS = (
+STABLE_SWEEP_FIELDS = (
     "workload",
     "bank_count",
     "address_mapping",
@@ -113,6 +161,47 @@ SWEEP_FIELDS = (
     "sweep_delta_pct",
     "primary_bottleneck",
     "confidence",
+)
+SWEEP_FIELDS = STABLE_SWEEP_FIELDS
+
+REQUIRED_UNSUPPORTED_CLAIM_MARKERS = (
+    "不声称真实 GPU 性能",
+    "不声称 NVIDIA Nsight 集成",
+    "不声称 ARM PMU 验证",
+    "不声称 Linux perf 验证",
+    "不声称 silicon validation",
+    "不声称 production signoff",
+    "不声称 full-system cycle accuracy",
+    "不声称 AXI / CHI protocol compliance",
+    "不声称真实 GEMM kernel performance",
+    "不声称真实 Transformer / attention kernel performance",
+    "不声称 FlashAttention 或 LLM inference performance",
+    "不声称 GPU simulation",
+)
+
+FORBIDDEN_AFFIRMATIVE_CLAIM_PATTERNS = (
+    "real GPU performance",
+    "real GEMM performance",
+    "real attention performance",
+    "real Transformer performance",
+    "cycle accurate",
+    "cycle-accurate",
+    "production signoff",
+    "silicon validation",
+    "hardware validation claim",
+    "Nsight correlation",
+    "PMU correlation",
+    "perf correlation",
+)
+
+CLAIM_NEGATION_MARKERS = (
+    "不声称",
+    "不是",
+    "不支持",
+    "not ",
+    "no ",
+    "unsupported",
+    "without",
 )
 
 DANGEROUS_CLEAN_PATHS = {
@@ -1104,6 +1193,98 @@ def write_csv(path, fieldnames, rows):
     return path
 
 
+def csv_header(path):
+    with repo_path(path).open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.reader(csv_file)
+        return next(reader, [])
+
+
+def missing_fields(actual_fields, required_fields):
+    actual = set(actual_fields)
+    return [field for field in required_fields if field not in actual]
+
+
+def forbidden_affirmative_claim_hits(report_text):
+    hits = []
+    for line_number, line in enumerate(report_text.splitlines(), start=1):
+        lower_line = line.lower()
+        if any(marker in lower_line for marker in CLAIM_NEGATION_MARKERS):
+            continue
+        for pattern in FORBIDDEN_AFFIRMATIVE_CLAIM_PATTERNS:
+            if pattern.lower() in lower_line:
+                hits.append(f"line {line_number}: {line.strip()}")
+                break
+    return hits
+
+
+def validate_project_k_acceptance(
+    summary_path,
+    sweep_path,
+    report_path,
+    summary_rows,
+    sweep_rows,
+):
+    errors = []
+    if len(CORE_WORKLOADS) != EXPECTED_CORE_WORKLOADS:
+        errors.append(
+            f"core workload count {len(CORE_WORKLOADS)} != {EXPECTED_CORE_WORKLOADS}"
+        )
+    if len(OPTIONAL_SYNTHETIC_PATTERNS) != EXPECTED_OPTIONAL_SYNTHETIC_PATTERNS:
+        errors.append(
+            "optional synthetic pattern count "
+            f"{len(OPTIONAL_SYNTHETIC_PATTERNS)} "
+            f"!= {EXPECTED_OPTIONAL_SYNTHETIC_PATTERNS}"
+        )
+    if len(ALL_WORKLOADS) != EXPECTED_TOTAL_WORKLOADS:
+        errors.append(
+            f"total workload count {len(ALL_WORKLOADS)} != {EXPECTED_TOTAL_WORKLOADS}"
+        )
+    if len(summary_rows) != EXPECTED_TOTAL_WORKLOADS:
+        errors.append(f"summary rows {len(summary_rows)} != {EXPECTED_TOTAL_WORKLOADS}")
+    if len(sweep_rows) != EXPECTED_SWEEP_ROWS:
+        errors.append(f"sweep rows {len(sweep_rows)} != {EXPECTED_SWEEP_ROWS}")
+    expected_sweep_from_knobs = (
+        EXPECTED_TOTAL_WORKLOADS * len(BANK_COUNT_SWEEP) * len(ADDRESS_MAPPING_SWEEP)
+    )
+    if EXPECTED_SWEEP_ROWS != expected_sweep_from_knobs:
+        errors.append(
+            f"expected sweep rows {EXPECTED_SWEEP_ROWS} != knob product "
+            f"{expected_sweep_from_knobs}"
+        )
+    if any(row.get("claim_boundary") != CLAIM_BOUNDARY for row in summary_rows):
+        errors.append("one or more summary rows have a mismatched claim boundary")
+
+    summary_missing = missing_fields(csv_header(summary_path), STABLE_SUMMARY_FIELDS)
+    if summary_missing:
+        errors.append("summary CSV missing stable fields: " + ", ".join(summary_missing))
+
+    sweep_missing = missing_fields(csv_header(sweep_path), STABLE_SWEEP_FIELDS)
+    if sweep_missing:
+        errors.append("sweep CSV missing stable fields: " + ", ".join(sweep_missing))
+
+    report_text = repo_path(report_path).read_text(encoding="utf-8")
+    missing_claim_markers = [
+        marker
+        for marker in REQUIRED_UNSUPPORTED_CLAIM_MARKERS
+        if marker not in report_text
+    ]
+    if missing_claim_markers:
+        errors.append(
+            "generated report missing unsupported-claim markers: "
+            + ", ".join(missing_claim_markers)
+        )
+
+    forbidden_hits = forbidden_affirmative_claim_hits(report_text)
+    if forbidden_hits:
+        errors.append(
+            "generated report has possible affirmative forbidden claim(s): "
+            + "; ".join(forbidden_hits)
+        )
+
+    if errors:
+        raise DemoError("Project K acceptance self-check failed: " + " | ".join(errors))
+
+
 def markdown_cell(value):
     return str(value).replace("\n", " ").replace("|", "\\|")
 
@@ -1148,19 +1329,19 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
     )
 
     lines = [
-        "# Project K.2 Workload-Aware Memory Bottleneck Report",
+        "# Project K.3 Workload-Aware Memory Bottleneck Report",
         "",
-        "状态：generated demo report。",
+        "状态：generated demo report with K.3 schema and self-check hardening。",
         "",
         "## Scope",
         "",
-        "Project K.2 使用受控 synthetic workload traces 运行 Project E simplified "
+        "Project K.3 使用受控 synthetic workload traces 运行 Project E simplified "
         "banked memory model，并输出趋势级 bottleneck attribution 和 mapping "
         "sensitivity sweep。它不是新的 C++ memory model，也不修改 Project G/H/I/J。",
         "",
         "## Architecture Summary",
         "",
-        "Project K.2 frames the architecture question as a bounded evidence chain: "
+        "Project K frames the architecture question as a bounded evidence chain: "
         "`workload access pattern -> memory-system stressor -> measurable symptom "
         "-> bottleneck attribution -> bounded recommendation`. The demo keeps "
         "`streaming`, `stride`, and `hot_bank` as core workloads, then adds "
@@ -1205,6 +1386,19 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
         "latency, throughput, queue delay, service delay, bank-conflict proxy, "
         "tail amplification, and sweep sensitivity.",
         "",
+        "## CSV Schema Contract",
+        "",
+        f"- Project K CSV schema version: `{PROJECT_K_SCHEMA_VERSION}`.",
+        "- Stable summary fields: "
+        + ", ".join(f"`{field}`" for field in STABLE_SUMMARY_FIELDS)
+        + ".",
+        "- Experimental summary fields: "
+        + ", ".join(f"`{field}`" for field in EXPERIMENTAL_SUMMARY_FIELDS)
+        + ".",
+        "- Stable sweep fields: "
+        + ", ".join(f"`{field}`" for field in STABLE_SWEEP_FIELDS)
+        + ".",
+        "",
         "## Attribution Summary",
         "",
     ]
@@ -1233,9 +1427,9 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
             "Each row keeps `evidence_fields` in the CSV so the primary bottleneck "
             "can be audited without treating the attribution as a black-box model.",
             "",
-            "## K.2 Sweep",
+            "## Current Sweep",
             "",
-            "K.2 covers `bank_count = 4 / 8 / 16` and "
+            "The current hard sweep covers `bank_count = 4 / 8 / 16` and "
             "`address_mapping = word_interleave / cacheline_interleave / "
             "row_interleave`. `xor_folded`, queue-depth sweep, service-latency "
             "sweep, and burstiness-mode sweep are future work.",
@@ -1268,6 +1462,7 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
             f"- `summary_rows={len(summary_rows)}`",
             f"- `sweep_rows={len(sweep_rows)}`",
             "- `claim_boundary=PASS`",
+            f"- `schema_version={PROJECT_K_SCHEMA_VERSION}`",
             "",
             "## Supported Claims",
             "",
@@ -1405,14 +1600,13 @@ def main():
 
     summary_row_count = len(summary_rows)
     sweep_row_count = len(sweep_rows)
-    claim_boundary_pass = (
-        summary_row_count >= len(ALL_WORKLOADS)
-        and sweep_row_count
-        >= len(ALL_WORKLOADS) * len(BANK_COUNT_SWEEP) * len(ADDRESS_MAPPING_SWEEP)
-        and all(row.get("claim_boundary") == CLAIM_BOUNDARY for row in summary_rows)
+    validate_project_k_acceptance(
+        summary_path,
+        sweep_path,
+        report_path,
+        summary_rows,
+        sweep_rows,
     )
-    if not claim_boundary_pass:
-        raise DemoError("Project K claim-boundary acceptance check failed")
 
     print("[demo-project-k] outputs")
     print(f"  - generated inputs: {display_path(input_dir)}")
@@ -1426,6 +1620,7 @@ def main():
     print(f"summary_rows={summary_row_count}")
     print(f"sweep_rows={sweep_row_count}")
     print("claim_boundary=PASS")
+    print(f"schema_version={PROJECT_K_SCHEMA_VERSION}")
     print(
         "scope: synthetic traces over Project E simplified banked memory model; "
         "no GPU simulation, no real GEMM/attention performance, no PMU/perf/Nsight, "

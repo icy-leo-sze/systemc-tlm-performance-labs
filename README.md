@@ -194,6 +194,7 @@ examples/lt/results/project_k_workload_bottleneck/project_k_report.md
 Project K 只支持 synthetic trace 上的趋势级 bottleneck attribution，不声称真实 GPU
 性能、真实 GEMM / attention / FlashAttention / LLM kernel performance、PMU / perf /
 Nsight correlation、silicon validation 或 AXI / CHI protocol compliance。
+当前 hard gate：`total_workloads=5`、`sweep_rows=45`、`schema_version=k0.2`。
 
 ## 为什么有价值
 
