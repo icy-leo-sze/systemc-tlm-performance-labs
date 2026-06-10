@@ -297,7 +297,48 @@ GPU 性能，不声称 GEMM / attention kernel performance，不接 PMU、Linux 
 NVIDIA Nsight，也不做 silicon validation、production signoff、full-system cycle
 accuracy 或 AXI / CHI protocol compliance。
 
-## 12. 面试官可能追问的问题和参考回答
+## 12. Project L 面试叙事：Evidence-Driven Memory Architecture Recommendation
+
+Problem：
+
+Project L 回答的是 architecture decision support 问题：当 Project K 已经给出
+workload-level bottleneck evidence 后，怎样把这些 metrics 转成有边界、可解释、可审计
+的内存架构建议，而不是停留在“看起来某个指标变高了”。
+
+Method：
+
+Project L 不改 C++ / SystemC 模型，也不改变 Project E 或 Project K 的输出契约。它读取
+Project K 的 `summary_rows` 和 `bank_count × address_mapping` sweep 结果，把
+`bank_conflict_proxy`、`queue_delay_ratio`、`service_delay_ratio`、
+`mapping_sensitivity_score`、`bank_count_sensitivity_score`、locality proxy 等信号解释为
+bounded recommendations。输出动作被限制在几个工程上可讨论的方向：增加 modeled bank
+parallelism、改变 address mapping、改善 locality / tiling、降低 queueing pressure、降低
+target service latency，或者在证据不足时继续观察。
+
+Evidence：
+
+这一步的价值是 trace/model metric interpretation。Project L 不把 recommendation 写成
+绝对收益，而是保留 `primary_bottleneck`、`confidence`、best observed bank/mapping knob、
+signal strength 和 `evidence_summary`，让面试官可以从一行 recommendation 追到具体
+Project K metric。
+
+Boundary：
+
+Project L 的 claim 是 bounded design hypothesis。它不声称真实硬件收益，不声称 GPU /
+GEMM / attention workload performance，不做 PMU、Linux perf 或 Nsight correlation，也
+不做 silicon validation、production signoff、cycle accuracy 或 AXI / CHI protocol
+compliance。它适合 early-stage architecture tradeoff thinking：在还没有更高保真 reference
+之前，先用受控 trace 和模型指标帮助决定下一步该扫 bank parallelism、mapping、locality、
+queueing 还是 service-latency knob。
+
+Role Value：
+
+对 SoC architecture / performance modeling roles 来说，这个项目展示的是三件事：
+第一，把 workload trace 和 model symptom 连接起来；第二，把 metrics 转成克制的
+architecture recommendation；第三，清楚区分 supported evidence 和 unsupported claim。
+这比单独展示一个脚本更接近真实 architecture exploration 的工作方式。
+
+## 13. 面试官可能追问的问题和参考回答
 
 ### Q1: 这个项目一句话是什么？
 
@@ -426,7 +467,7 @@ policy、trace 和 metrics。
 答：限制是模型抽象层次较高，协议和 timing 细节都被简化了。因此它适合解释趋势和
 方法，不适合当作协议合规或 cycle-accurate signoff 模型。
 
-## 12. Phase 16 后续计划
+## 14. Phase 16 后续计划
 
 Phase 16 后我会保持同样的原则：小步扩展、每一步都有 trace、metrics、sweep 和
 demo，不把未来计划说成已经完成的能力。
