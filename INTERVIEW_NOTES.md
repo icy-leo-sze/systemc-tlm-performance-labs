@@ -232,8 +232,11 @@ Problem：
 
 我想回答的问题不是“这个模型能不能预测真实 GPU 或真实 memory controller 性能”，而是：
 当 workload access pattern 改变时，简化 banked memory subsystem 里的压力会如何迁移？
-具体来说，`streaming`、`stride` 和 `hot_bank` 三类输入会分别制造不同的 memory-system
-stressor：平滑连续访问、固定步长映射敏感性、以及集中到少数 bank 的 queue pressure。
+具体来说，`streaming`、`stride` 和 `hot_bank` 三类 core 输入会分别制造不同的
+memory-system stressor：平滑连续访问、固定步长映射敏感性、以及集中到少数 bank 的
+queue pressure。当前 K.2/K.3 还加入 `tiled_gemm_like` 和
+`attention_like_blocked` 两类 optional synthetic access-pattern-inspired traces，但不把它们
+解释成真实 GEMM、attention 或 GPU workload。
 
 Method：
 
@@ -248,7 +251,7 @@ synthetic workload access pattern
 ```
 
 实现上我没有扩展 C++ / SystemC model，而是复用 Project E simplified banked memory
-model。Python wrapper 生成三类 Project E-compatible traces，提取 trace-derived
+model。Python wrapper 生成 5 类 Project E-compatible synthetic traces，提取 trace-derived
 features，例如 `sequentiality_score`、`dominant_stride`、`burstiness_score`、
 `bank_entropy` 和 `max_bank_share`；再从 Project E `trace.csv` / `summary.csv` 提取
 model-derived metrics，例如 `queue_delay_ratio`、`service_delay_ratio`、
@@ -260,13 +263,16 @@ Project K 的 attribution 不是黑箱模型，而是显式规则。`bank_confli
 `max_bank_share`、`bank_entropy` 和 `bank_conflict_proxy`；`queueing_bound` 看
 `queue_delay_ratio`、queue occupancy 和 rejected transactions；`service_latency_bound`
 看 `service_delay_ratio`；`burstiness_bound` 看 burstiness 和 tail amplification。
+K.2/K.3 还保留 `locality_loss_bound` 和 `bandwidth_pressure_bound` 作为 modeled proxy
+规则，但不写成真实 cache miss 或真实 bandwidth claim。
 每个 workload 的输出都会保留 `primary_bottleneck`、`confidence`、`evidence_fields` 和
 `recommendation`。
 
 Result：
 
-当前 demo 一条命令生成 3 类 workload、3 行 summary 和 9 行 `bank_count=4/8/16`
-sweep 结果：
+当前 demo 一条命令生成 5 类 workload、5 行 summary 和 45 行
+`bank_count × address_mapping` sweep 结果；K.3 同时把 CSV schema 固定为
+`schema_version=k0.2` 并加入 schema / claim-boundary self-check：
 
 ```bash
 python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
@@ -278,12 +284,10 @@ python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
 workload 形态、memory-system stressor、可测症状和 attribution 连成了一个可展示的
 architecture case。
 
-Project K.2 在不修改 C++ / SystemC model 的前提下，把输入扩展到 5 类 synthetic
-patterns：保留 `streaming`、`stride`、`hot_bank` 三类 core workload，同时加入
-`tiled_gemm_like` 和 `attention_like_blocked` 两类 optional synthetic
-access-pattern-inspired traces，并把 sweep 扩展为 `bank_count` × `address_mapping`。
-我会把这一步解释成 mapping sensitivity 和 workload-shape coverage，而不是真实 GEMM、
-attention、GPU 或 LLM performance。
+当前状态保留 `streaming`、`stride`、`hot_bank` 三类 core workload，同时加入
+`tiled_gemm_like` 和 `attention_like_blocked` 两类 optional synthetic pattern。我会把这一步
+解释成 mapping sensitivity 和 workload-shape coverage，而不是真实 GEMM、attention、GPU
+或 LLM performance。
 
 Boundary：
 
@@ -293,7 +297,48 @@ GPU 性能，不声称 GEMM / attention kernel performance，不接 PMU、Linux 
 NVIDIA Nsight，也不做 silicon validation、production signoff、full-system cycle
 accuracy 或 AXI / CHI protocol compliance。
 
-## 12. 面试官可能追问的问题和参考回答
+## 12. Project L 面试叙事：Evidence-Driven Memory Architecture Recommendation
+
+Problem：
+
+Project L 回答的是 architecture decision support 问题：当 Project K 已经给出
+workload-level bottleneck evidence 后，怎样把这些 metrics 转成有边界、可解释、可审计
+的内存架构建议，而不是停留在“看起来某个指标变高了”。
+
+Method：
+
+Project L 不改 C++ / SystemC 模型，也不改变 Project E 或 Project K 的输出契约。它读取
+Project K 的 `summary_rows` 和 `bank_count × address_mapping` sweep 结果，把
+`bank_conflict_proxy`、`queue_delay_ratio`、`service_delay_ratio`、
+`mapping_sensitivity_score`、`bank_count_sensitivity_score`、locality proxy 等信号解释为
+bounded recommendations。输出动作被限制在几个工程上可讨论的方向：增加 modeled bank
+parallelism、改变 address mapping、改善 locality / tiling、降低 queueing pressure、降低
+target service latency，或者在证据不足时继续观察。
+
+Evidence：
+
+这一步的价值是 trace/model metric interpretation。Project L 不把 recommendation 写成
+绝对收益，而是保留 `primary_bottleneck`、`confidence`、best observed bank/mapping knob、
+signal strength 和 `evidence_summary`，让面试官可以从一行 recommendation 追到具体
+Project K metric。
+
+Boundary：
+
+Project L 的 claim 是 bounded design hypothesis。它不声称真实硬件收益，不声称 GPU /
+GEMM / attention workload performance，不做 PMU、Linux perf 或 Nsight correlation，也
+不做 silicon validation、production signoff、cycle accuracy 或 AXI / CHI protocol
+compliance。它适合 early-stage architecture tradeoff thinking：在还没有更高保真 reference
+之前，先用受控 trace 和模型指标帮助决定下一步该扫 bank parallelism、mapping、locality、
+queueing 还是 service-latency knob。
+
+Role Value：
+
+对 SoC architecture / performance modeling roles 来说，这个项目展示的是三件事：
+第一，把 workload trace 和 model symptom 连接起来；第二，把 metrics 转成克制的
+architecture recommendation；第三，清楚区分 supported evidence 和 unsupported claim。
+这比单独展示一个脚本更接近真实 architecture exploration 的工作方式。
+
+## 13. 面试官可能追问的问题和参考回答
 
 ### Q1: 这个项目一句话是什么？
 
@@ -422,7 +467,7 @@ policy、trace 和 metrics。
 答：限制是模型抽象层次较高，协议和 timing 细节都被简化了。因此它适合解释趋势和
 方法，不适合当作协议合规或 cycle-accurate signoff 模型。
 
-## 12. Phase 16 后续计划
+## 14. Phase 16 后续计划
 
 Phase 16 后我会保持同样的原则：小步扩展、每一步都有 trace、metrics、sweep 和
 demo，不把未来计划说成已经完成的能力。

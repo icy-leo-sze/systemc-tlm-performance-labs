@@ -81,6 +81,7 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 | Project I | Profiler / Counter Correlation Interface | [`docs/project_i_profiler_counter_correlation_interface_report.md`](docs/project_i_profiler_counter_correlation_interface_report.md)、`examples/lt/tools/demo_profiler_counter_correlation_lab.py` | sample-only profiler/counter schema and ingest interface；不是 hardware counter validation |
 | Project J | Accuracy Validation Evidence Packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`examples/lt/tools/demo_accuracy_validation_packet.py` | claim-bounded evidence packet；不是 silicon validation、production signoff 或 full-system cycle accuracy |
 | Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`examples/lt/tools/demo_project_k_workload_bottleneck_lab.py` | synthetic trace + Project E simplified banked model 的趋势级 bottleneck attribution；不是 GPU、AI kernel、silicon 或 hardware-counter validation |
+| Project L | Evidence-driven memory architecture recommendation | `examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv`、`project_l_recommendation_report.md` | Project K evidence 上的 bounded recommendation layer；不是 production signoff、protocol compliance 或 silicon claim |
 
 ## Project D：Standalone C++ Trace Replay Engine
 
@@ -194,6 +195,27 @@ examples/lt/results/project_k_workload_bottleneck/project_k_report.md
 Project K 只支持 synthetic trace 上的趋势级 bottleneck attribution，不声称真实 GPU
 性能、真实 GEMM / attention / FlashAttention / LLM kernel performance、PMU / perf /
 Nsight correlation、silicon validation 或 AXI / CHI protocol compliance。
+当前 hard gate：`total_workloads=5`、`sweep_rows=45`、`schema_version=k0.2`。
+
+## Project L：Evidence-Driven Memory Architecture Recommendation Lab
+
+Project L converts Project K bottleneck evidence into bounded memory architecture
+recommendations, such as bank parallelism, address mapping, locality improvement,
+queueing reduction, or service-latency reduction.
+
+它不修改底层 SystemC/TLM 或 Project E 模型，只读取 Project K 的 workload metrics、
+bank conflict proxy、queue delay、service delay、mapping sensitivity 和 bank-count
+sensitivity，把这些证据转换为可审计的 architecture decision-support hypotheses。
+
+新增输出：
+
+```text
+examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv
+examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendation_report.md
+```
+
+当前 hard gate：`recommendation_rows=5`、`schema_version=l0.1`、
+`claim_boundary=PASS`。
 
 ## 为什么有价值
 
