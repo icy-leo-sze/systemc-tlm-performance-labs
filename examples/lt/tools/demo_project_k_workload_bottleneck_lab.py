@@ -810,6 +810,18 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
         "banked memory model，并输出趋势级 bottleneck attribution。它不是新的 C++ "
         "memory model，也不修改 Project G/H/I/J。",
         "",
+        "## Architecture Summary",
+        "",
+        "Project K frames the architecture question as a bounded evidence chain: "
+        "`workload access pattern -> memory-system stressor -> measurable symptom "
+        "-> bottleneck attribution -> bounded recommendation`. The demo uses "
+        "`streaming` as a low-pressure baseline, `stride` as a bank-mapping "
+        "sensitivity case, and `hot_bank` as a concentrated queue-pressure case.",
+        "",
+        "Recommendations in this report are expected directions inside the "
+        "Project E simplified model. They are not hardware performance claims, "
+        "not GPU claims, and not AI-kernel performance claims.",
+        "",
         "## Flow",
         "",
         "```text",
@@ -832,6 +844,14 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
         "`tiled_gemm_like` and `attention_like_blocked` are future optional "
         "synthetic access-pattern-inspired traces. They are not v0.1 hard gates.",
         "",
+        "## Metric Split",
+        "",
+        "Trace-derived features describe the input shape: request count, bytes, "
+        "read/write mix, locality proxies, stride, burstiness, and modeled bank "
+        "concentration. Model-derived metrics describe the symptoms after replay: "
+        "latency, throughput, queue delay, service delay, bank-conflict proxy, "
+        "and tail amplification.",
+        "",
         "## Attribution Summary",
         "",
     ]
@@ -843,6 +863,18 @@ def write_generated_report(path, summary_rows, sweep_rows, generated_paths):
     )
     lines.extend(
         [
+            "",
+            "## Evidence Chain",
+            "",
+            "- `streaming`: low queue pressure in the current model, so the baseline "
+            "is expected to be service-latency dominated.",
+            "- `stride`: fixed address deltas can concentrate modeled bank access and "
+            "increase same-bank waiting.",
+            "- `hot_bank`: concentrated addresses plus bursty issue can saturate the "
+            "modeled bank queue, increasing tail latency and rejected transactions.",
+            "",
+            "Each row keeps `evidence_fields` in the CSV so the primary bottleneck "
+            "can be audited without treating the attribution as a black-box model.",
             "",
             "## Minimal Sweep",
             "",

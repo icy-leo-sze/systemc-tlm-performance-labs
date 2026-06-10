@@ -80,6 +80,7 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 | Project H | Verilator RTL Golden Model MVP | [`docs/project_h_verilator_rtl_golden_model_report.md`](docs/project_h_verilator_rtl_golden_model_report.md)、`examples/lt/rtl_banked_memory_controller/`、`examples/lt/tools/demo_rtl_golden_model_lab.py` | local Verilator RTL reference for banked memory controller only；不是 full SoC、silicon 或 production RTL validation |
 | Project I | Profiler / Counter Correlation Interface | [`docs/project_i_profiler_counter_correlation_interface_report.md`](docs/project_i_profiler_counter_correlation_interface_report.md)、`examples/lt/tools/demo_profiler_counter_correlation_lab.py` | sample-only profiler/counter schema and ingest interface；不是 hardware counter validation |
 | Project J | Accuracy Validation Evidence Packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`examples/lt/tools/demo_accuracy_validation_packet.py` | claim-bounded evidence packet；不是 silicon validation、production signoff 或 full-system cycle accuracy |
+| Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`examples/lt/tools/demo_project_k_workload_bottleneck_lab.py` | synthetic trace + Project E simplified banked model 的趋势级 bottleneck attribution；不是 GPU、AI kernel、silicon 或 hardware-counter validation |
 
 ## Project D：Standalone C++ Trace Replay Engine
 
@@ -167,6 +168,30 @@ examples/lt/results/project_f_gem5_stats_correlation/correlation_report.md
 Project F 不做 gem5 live co-simulation，不声称 cycle accuracy，不声称 RTL / silicon /
 profiler correlation。Project B / C normalized trace 中的 `timestamp_ns` 仍然只是
 normalized issue-time / ordering hint，不是 gem5 timing。
+
+## Project K：Workload-Aware Bottleneck Characterization
+
+Project K 用三类 synthetic workload traces（`streaming`、`stride`、`hot_bank`）复用
+Project E simplified banked memory model，把 access pattern 转成 trace-derived features、
+model-derived metrics、bottleneck attribution 和 bounded recommendation。
+
+运行命令：
+
+```bash
+python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
+```
+
+关键输出：
+
+```text
+examples/lt/results/project_k_workload_bottleneck/project_k_workload_bottleneck_summary.csv
+examples/lt/results/project_k_workload_bottleneck/project_k_what_if_sweep_summary.csv
+examples/lt/results/project_k_workload_bottleneck/project_k_report.md
+```
+
+Project K 只支持 synthetic trace 上的趋势级 bottleneck attribution，不声称真实 GPU
+性能、真实 GEMM / attention kernel performance、PMU / perf / Nsight correlation、
+silicon validation 或 AXI / CHI protocol compliance。
 
 ## 为什么有价值
 

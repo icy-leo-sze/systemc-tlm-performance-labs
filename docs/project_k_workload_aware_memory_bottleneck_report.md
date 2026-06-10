@@ -10,6 +10,30 @@ characterization 闭环。
 v0.1 复用 Project E simplified banked memory model。Project K 只新增 Python
 orchestration、CSV/markdown 输出和显式 bottleneck attribution 规则。
 
+## Architecture Story
+
+Project K 回答的架构问题是：当 workload access pattern 改变时，一个简化的 banked
+memory subsystem 会先在哪里表现出压力？它不从真实硬件 counter 或真实 AI kernel
+性能出发，而是先把问题收敛到可控 trace：
+
+```text
+workload access pattern
+-> memory-system stressor
+-> measurable symptom
+-> bottleneck attribution
+-> bounded recommendation
+```
+
+这个 story 的重点是因果链，而不是单个数字。`streaming` 提供低冲突 baseline；
+`stride` 用固定地址步长制造 bank mapping sensitivity；`hot_bank` 把访问集中到少数
+modeled bank，并用 bursty issue pattern 放大 queueing 和 tail latency。Project K
+把这三类 pattern 统一转换成 Project E-compatible trace，然后把 trace-derived features
+和 model-derived metrics 联合起来，给出显式规则驱动的瓶颈归因。
+
+因此 Project K 的展示价值是：同一套 `trace -> model -> metrics -> attribution ->
+recommendation` 链路可以把 workload 形态、memory-system stressor 和可解释结论连起来。
+它不是 accuracy validation，也不是真实硬件性能预测。
+
 ## Scope
 
 Current scope：
@@ -52,9 +76,9 @@ synthetic workload trace
 
 | Workload | Pattern | Purpose |
 | --- | --- | --- |
-| `streaming` | 连续地址访问 | low-conflict baseline。 |
-| `stride` | 固定 stride 访问 | 观察 bank mapping sensitivity、stride resonance 和 tail amplification。 |
-| `hot_bank` | 地址集中映射到少数 modeled bank，并带 bursty issue pattern | 观察 bank concentration、queueing 和 latency tail。 |
+| `streaming` | 连续地址访问，issue gap 平滑 | low-conflict baseline，用来确认模型在低压力输入下主要由 service latency 主导。 |
+| `stride` | 固定 stride 访问 | 观察 bank mapping sensitivity、stride resonance、queue build-up 和 tail amplification。 |
+| `hot_bank` | 地址集中映射到少数 modeled bank，并带 bursty issue pattern | 观察 bank concentration、queueing、rejected transaction 和 latency tail。 |
 
 `tiled_gemm_like` 和 `attention_like_blocked` 是 future optional synthetic
 access-pattern-inspired traces。即使未来加入，它们也不能被写成真实 GEMM kernel simulator、
@@ -82,6 +106,13 @@ Trace-derived features：
 bank-count assumption，不声称真实 DRAM bank conflict、GPU shared-memory bank conflict 或
 silicon counter behavior。
 
+Trace-derived features 只回答“输入长什么样”。例如：
+
+- `sequentiality_score` 和 `dominant_stride` 描述地址序列；
+- `burstiness_score` 描述 issue-time gap 是否集中成 burst；
+- `bank_entropy` 和 `max_bank_share` 描述在当前 synthetic bank mapping 下访问是否集中；
+- `reuse_ratio` 和 `unique_cacheline_count` 只是 locality proxy，不代表真实 cache hit/miss。
+
 Model-derived metrics：
 
 - `avg_latency_ns`
@@ -92,6 +123,14 @@ Model-derived metrics：
 - `service_delay_ratio`
 - `bank_conflict_proxy`
 - `p95_p50_latency_ratio`
+
+Model-derived metrics 回答“这个输入在当前 simplified model 里造成了什么症状”。例如：
+
+- `queue_delay_ratio` 说明延迟中有多少来自 waiting；
+- `service_delay_ratio` 说明延迟中有多少来自 modeled service latency；
+- `p95_p50_latency_ratio` 说明 tail 是否被明显放大；
+- `bank_conflict_proxy` 是 accepted requests 中出现 same-bank waiting 的 proxy，不是硬件
+  bank-conflict counter。
 
 Field degradation rules：
 
@@ -125,6 +164,31 @@ Project K v0.1 使用显式规则，不使用黑箱模型。
 - `claim_boundary`
 
 Recommendation 只表达 expected direction，不写真实硬件收益百分比。
+
+## Observed v0.1 Results
+
+当前默认 demo 的 presentation-level 观察结果如下。它们来自 Project E simplified banked
+memory model 的 generated CSV，只能用于趋势级解释。
+
+| Workload | Primary bottleneck | Key evidence | Interpretation |
+| --- | --- | --- | --- |
+| `streaming` | `service_latency_bound` | `queue_delay_ratio=0.000`, `service_delay_ratio=1.000`, `max_queue_occupancy=1` | 连续访问没有形成明显 queue pressure；在当前模型里，延迟主要由 fixed service / row latency 组成。 |
+| `stride` | `queueing_bound` | `queue_delay_ratio=0.746`, `bank_conflict_proxy=0.979`, `max_queue_occupancy=7` | 固定 stride 让请求更容易压到相同 modeled bank，queue waiting 成为主要症状。 |
+| `hot_bank` | `queueing_bound` | `max_bank_share=1.000`, `queue_delay_ratio=0.914`, `max_queue_occupancy=16`, `stalled_or_rejected_transactions=63` | hot-bank + bursty issue 把请求集中到一个 modeled bank，触发 queue saturation、tail latency 和 reject。 |
+
+这组结果形成的 evidence chain 是：
+
+```text
+streaming / stride / hot_bank synthetic traces
+-> sequentiality / stride / bank concentration / burstiness features
+-> queue_delay_ratio / service_delay_ratio / bank_conflict_proxy / tail metrics
+-> service_latency_bound or queueing_bound attribution
+-> bounded recommendation direction
+```
+
+其中 `recommendation` 只表示“在当前 simplified model 中，下一步可以尝试的架构方向”。
+例如增加 modeled bank parallelism 或让 synthetic address mapping 更分散，只是 expected
+direction；它不是真实硬件性能收益百分比，也不是 production memory-system recommendation。
 
 ## Minimal Sweep
 

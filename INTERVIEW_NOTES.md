@@ -226,7 +226,67 @@ trace，再生成 metrics 和 comparison。这正是 architecture performance an
 用于展示 workload sensitivity、trace instrumentation、metrics extraction、
 sweep automation 和 AT phase-level observability。
 
-## 11. 面试官可能追问的问题和参考回答
+## 11. Project K 面试叙事：Workload-Aware Bottleneck Characterization
+
+Problem：
+
+我想回答的问题不是“这个模型能不能预测真实 GPU 或真实 memory controller 性能”，而是：
+当 workload access pattern 改变时，简化 banked memory subsystem 里的压力会如何迁移？
+具体来说，`streaming`、`stride` 和 `hot_bank` 三类输入会分别制造不同的 memory-system
+stressor：平滑连续访问、固定步长映射敏感性、以及集中到少数 bank 的 queue pressure。
+
+Method：
+
+Project K 把这个问题做成一条可复现链路：
+
+```text
+synthetic workload access pattern
+-> memory-system stressor
+-> measurable symptom
+-> bottleneck attribution
+-> bounded recommendation
+```
+
+实现上我没有扩展 C++ / SystemC model，而是复用 Project E simplified banked memory
+model。Python wrapper 生成三类 Project E-compatible traces，提取 trace-derived
+features，例如 `sequentiality_score`、`dominant_stride`、`burstiness_score`、
+`bank_entropy` 和 `max_bank_share`；再从 Project E `trace.csv` / `summary.csv` 提取
+model-derived metrics，例如 `queue_delay_ratio`、`service_delay_ratio`、
+`bank_conflict_proxy` 和 `p95_p50_latency_ratio`。
+
+Evidence：
+
+Project K 的 attribution 不是黑箱模型，而是显式规则。`bank_conflict_bound` 看
+`max_bank_share`、`bank_entropy` 和 `bank_conflict_proxy`；`queueing_bound` 看
+`queue_delay_ratio`、queue occupancy 和 rejected transactions；`service_latency_bound`
+看 `service_delay_ratio`；`burstiness_bound` 看 burstiness 和 tail amplification。
+每个 workload 的输出都会保留 `primary_bottleneck`、`confidence`、`evidence_fields` 和
+`recommendation`。
+
+Result：
+
+当前 demo 一条命令生成 3 类 workload、3 行 summary 和 9 行 `bank_count=4/8/16`
+sweep 结果：
+
+```bash
+python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
+```
+
+核心观察是：`streaming` 在当前模型中主要表现为 `service_latency_bound` baseline；
+`stride` 更容易形成 same-bank waiting 和 queueing；`hot_bank` 会把 modeled bank 压满，
+出现高 `queue_delay_ratio`、高 queue occupancy 和 rejected transactions。这个结果把
+workload 形态、memory-system stressor、可测症状和 attribution 连成了一个可展示的
+architecture case。
+
+Boundary：
+
+Project K 的 recommendation 只表示 expected direction，例如增加 modeled bank
+parallelism 或分散 synthetic address mapping。它不是真实硬件收益百分比，不声称真实
+GPU 性能，不声称 GEMM / attention kernel performance，不接 PMU、Linux perf 或
+NVIDIA Nsight，也不做 silicon validation、production signoff、full-system cycle
+accuracy 或 AXI / CHI protocol compliance。
+
+## 12. 面试官可能追问的问题和参考回答
 
 ### Q1: 这个项目一句话是什么？
 
