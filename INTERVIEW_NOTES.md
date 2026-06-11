@@ -163,6 +163,48 @@ response path。
 python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
 ```
 
+### Project AT-2：Multi-Initiator AT Arbitration and Contention Lab
+
+Project AT-2 是 AT 主线的下一阶段。AT-1 证明我能把单个 initiator 到 memory target
+的四阶段 timing 拆出来；AT-2 则把问题推进到多个 initiator 共享一个 simple AT
+interconnect / memory target 时，arbitration policy 如何影响 request latency、
+p95 / p99 tail latency、initiator-level fairness、back-pressure 和 throughput。
+
+模型里有三个 synthetic initiator：`cpu0`、`dma0`、`accel0`。它们通过
+`nb_transport_fw` 发出 `BEGIN_REQ`，interconnect 维护 per-initiator request queue，
+再用 `round_robin`、`fixed_priority` 或 `weighted_priority` 选择下一个 request
+送往有限 queue depth 的 memory target。target 通过 `END_REQ` 和 `BEGIN_RESP`
+返回 timing，initiator 再发 `END_RESP`。每笔 transaction 都会写入四阶段或近似四阶段
+timestamp，并由 Python demo 汇总成 initiator-level 和 policy-level metrics。
+
+面试叙事重点可以这样讲：
+
+- multi-initiator contention 会把单个 transaction timing 问题变成共享路径资源竞争问题。
+- `round_robin` 更适合作为 fairness baseline，但不保证每个 initiator 都有最低 tail latency。
+- `fixed_priority` 可以保护高优先级 traffic，例如 `dma0`，但低优先级 initiator 的 p95 / p99
+  latency 可能显著上升。
+- `weighted_priority` 是 QoS-like tradeoff，可以偏向 `accel0`，但这不是 AXI QoS /
+  CHI QoS compliance。
+- bursty traffic 会放大 queueing pressure 和 back-pressure，这些现象可以在
+  `initiator_blocked_ns`、`backpressure_events`、`fairness_share` 和
+  `fairness_index` 中观察到。
+
+复现命令：
+
+```bash
+cmake -S examples/at -B build-at2 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
+python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
+  --build-dir build-at2
+```
+
+边界讲法要保持清楚：AT-2 是 teaching / architecture modeling lab，适合讨论 RTL 前的
+SoC architecture exploration 和 arbitration tradeoff；它不是 AXI / CHI protocol
+compliance，不是 cycle-accurate interconnect model，不是真实 NoC，不是 silicon
+validation，也不是 production signoff。
+
 ## 5. 我为什么这样设计实验链路
 
 我把实验链路设计成 `workload → trace → metrics → sweep → comparison → demo`，

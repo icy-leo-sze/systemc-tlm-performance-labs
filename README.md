@@ -32,7 +32,7 @@ silicon validation、full-system cycle accuracy 或 full SoC validation。
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
 | LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model、gem5 stats trend correlation report | `python3 examples/lt/tools/demo_performance_lab.py` |
-| AT 仲裁与四阶段时序实验室 | [`examples/at`](examples/at) | AT | TLM phase trace、arbitration policy sweep、four-phase memory transaction timing、target queueing 和 back-pressure observability | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at`；`python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py` |
+| AT 仲裁与四阶段时序实验室 | [`examples/at`](examples/at) | AT | TLM phase trace、arbitration policy sweep、four-phase memory transaction timing、multi-initiator contention、arbitration policy、fairness / tail latency tradeoff、target queueing 和 back-pressure observability | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at`；`python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py`；`python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py --build-dir build-at2` |
 
 详细说明：
 
@@ -73,6 +73,7 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 | --- | --- | --- | --- |
 | LT / AT labs | 主实验链路 | `examples/lt`、`examples/at`、demo、sweep、comparison report | architecture-level performance workflow 和 AT phase observability；不是 protocol-complete 或 cycle-accurate model |
 | Project AT-1 | Four-Phase AT Memory Transaction Timing Lab | `examples/at/four_phase_memory_timing/`、`demo_project_at1_four_phase_memory_timing.py`、`project_at1_summary.csv`、`project_at1_report.md` | TLM-2.0 approximately-timed non-blocking transport teaching / architecture modeling；展示 `nb_transport_fw` / `nb_transport_bw`、四阶段 timing、target queueing 和 back-pressure；不是 AXI / CHI compliance、cycle accuracy、silicon validation 或 production signoff |
+| Project AT-2 | Multi-Initiator AT Arbitration and Contention Lab | `examples/at/multi_initiator_arbitration/`、`demo_project_at2_multi_initiator_arbitration.py`、`project_at2_summary.csv`、`project_at2_policy_summary.csv`、`project_at2_report.md` | 多 initiator 共享 AT interconnect / memory target 的 contention、arbitration policy、queueing pressure、fairness / p95-p99 tail latency 和 back-pressure 观察；不是 AXI / CHI protocol compliance、cycle-accurate interconnect、真实 NoC、silicon validation 或 production signoff |
 | Project B / C | normalized trace replay 和 gem5 SE-derived trace replay | normalized trace、`summary.csv`、`comparison.md` | gem5 SE 是 offline trace producer；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
 | Project D | standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metrics equivalence；不接 SystemC kernel，不做 live co-simulation |
 | Project E | standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | memory subsystem abstraction；不是 JEDEC DRAM timing 或 production controller |
@@ -83,6 +84,40 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 | Project J | Accuracy Validation Evidence Packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`examples/lt/tools/demo_accuracy_validation_packet.py` | claim-bounded evidence packet；不是 silicon validation、production signoff 或 full-system cycle accuracy |
 | Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`examples/lt/tools/demo_project_k_workload_bottleneck_lab.py` | synthetic trace + Project E simplified banked model 的趋势级 bottleneck attribution；不是 GPU、AI kernel、silicon 或 hardware-counter validation |
 | Project L | Evidence-driven memory architecture recommendation | `examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv`、`project_l_recommendation_report.md` | Project K evidence 上的 bounded recommendation layer；不是 production signoff、protocol compliance 或 silicon claim |
+
+## Project AT-2：Multi-Initiator AT Arbitration and Contention Lab
+
+Project AT-2 在 Project AT-1 的 approximately-timed non-blocking transport 基础上，
+新增一个独立 AT demo。它用 `cpu0`、`dma0`、`accel0` 三个 synthetic initiator
+共享一个 simple AT interconnect / memory target，通过 `round_robin`、
+`fixed_priority`、`weighted_priority` 三类 arbitration policy 比较 request latency、
+p95 / p99 tail latency、initiator-level fairness、back-pressure 和 aggregate throughput。
+
+运行命令：
+
+```bash
+cmake -S examples/at -B build-at2 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
+
+python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
+  --build-dir build-at2
+```
+
+关键输出：
+
+```text
+examples/at/results/project_at2_multi_initiator_arbitration/model_runs/<case_name>/trace.csv
+examples/at/results/project_at2_multi_initiator_arbitration/project_at2_summary.csv
+examples/at/results/project_at2_multi_initiator_arbitration/project_at2_policy_summary.csv
+examples/at/results/project_at2_multi_initiator_arbitration/project_at2_report.md
+```
+
+Project AT-2 是教学性、架构探索性的 SystemC/TLM AT lab。它展示多 initiator
+contention、arbitration policy、queueing pressure、fairness / tail latency tradeoff
+和 back-pressure，但不声称 AXI / CHI protocol compliance，不声称 cycle accuracy，
+不声称真实 NoC、真实 DRAM timing、silicon validation 或 production signoff。
 
 ## Project D：Standalone C++ Trace Replay Engine
 
@@ -264,6 +299,17 @@ python3 examples/at/tools/demo_at_lab.py \
 
 ```bash
 python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
+```
+
+运行 Project AT-2 multi-initiator arbitration demo：
+
+```bash
+cmake -S examples/at -B build-at2 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
+python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
+  --build-dir build-at2
 ```
 
 运行 LT one-command demo：
