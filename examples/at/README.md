@@ -227,6 +227,47 @@ cycle-accurate interconnect model, not a real NoC model, not a cache coherence
 model, not silicon validation, not production signoff, and not a real DRAM
 timing model.
 
+## Project AT-4：Cache-like Shared Resource and MSHR Pressure Lab
+
+Project AT-4 adds an independent AT-level shared-resource pressure demo in
+`examples/at/project_at4_cache_mshr_pressure.cpp`. It models a bounded path:
+`initiator -> interconnect/arbitration -> cache-like shared resource -> memory target`.
+
+The model demonstrates:
+
+- `cpu0` latency-sensitive hotset traffic
+- `dma0` streaming traffic as a pollution / bandwidth-pressure source
+- `accel0` bursty tiled reuse traffic
+- hit/miss abstraction, MSHR-like outstanding miss limit, miss queue delay,
+  shared-resource interference, tail-latency collapse, and diminishing return
+
+Build and run Project AT-4 from the repository root:
+
+```bash
+cmake -S examples/at -B build-at \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+
+cmake --build build-at --target project_at4_cache_mshr_pressure -j
+
+python3 examples/at/tools/demo_at4_cache_mshr_pressure.py \
+  --at-build-dir build-at
+```
+
+It writes:
+
+- `examples/at/results/project_at4_cache_mshr_pressure/model_runs/<case_name>/trace.csv`
+- `examples/at/results/project_at4_cache_mshr_pressure/project_at4_summary.csv`
+- `examples/at/results/project_at4_cache_mshr_pressure/project_at4_policy_sweep.csv`
+- `examples/at/results/project_at4_cache_mshr_pressure/project_at4_recommendations.csv`
+- `examples/at/results/project_at4_cache_mshr_pressure/project_at4_report.md`
+
+Project AT-4 is a cache-like shared-resource architecture exploration model. It
+is not real cache coherence, not a real L1/L2/L3 hierarchy, not real replacement
+policy fidelity, not real inclusive/exclusive hierarchy behavior, not a real
+NoC model, not cycle-accurate timing, not silicon validation, and not production
+signoff.
+
 ## Build and Run
 
 From the repository root:
