@@ -262,6 +262,16 @@ It writes:
 - `examples/at/results/project_at4_cache_mshr_pressure/project_at4_recommendations.csv`
 - `examples/at/results/project_at4_cache_mshr_pressure/project_at4_report.md`
 
+What interviewers should learn from Project AT-4:
+
+- The lab isolates locality, MSHR-like miss-level parallelism, memory service
+  latency, and shared traffic interference as separate architecture levers.
+- The useful signal is not "this is a real cache"; the useful signal is that
+  p95/p99 tail latency, `mshr_full_events`, `pollution_proxy`, and
+  `interference_score` can guide early bottleneck diagnosis before RTL.
+- The diminishing-return case shows why increasing outstanding miss capacity
+  cannot fix a memory-service-dominated path by itself.
+
 Project AT-4 is a cache-like shared-resource architecture exploration model. It
 is not real cache coherence, not a real L1/L2/L3 hierarchy, not real replacement
 policy fidelity, not real inclusive/exclusive hierarchy behavior, not a real

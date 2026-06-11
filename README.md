@@ -2,7 +2,8 @@
 
 这是一个边界清晰的 SystemC/TLM 早期 SoC 性能建模作品集，覆盖从 LT workload
 bottleneck analysis 到 AT transaction timing、arbitration、QoS-like sensitivity、
-SLA violation analysis，以及可复现 evidence packaging 的完整链路。
+SLA violation analysis、cache-like MSHR pressure，以及可复现 evidence packaging
+的完整链路。
 
 > 架构建模只有在 assumptions、metrics 和 claim boundaries 可见时才有价值。
 
@@ -21,7 +22,7 @@ protocol-complete model。
 | --- | --- | --- |
 | 理解整体架构叙事 | [`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md) | 把 LT 和 AT labs 串成一条作品集主线 |
 | 审查可复现证据 | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md) | 解释 validation flow 和 generated artifacts |
-| 查看指标摘要 | [`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md) | 汇总 K/L/AT-1/AT-2/AT-3 的 CSV outputs |
+| 查看指标摘要 | [`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md) | 汇总 K/L/AT-1/AT-2/AT-3/AT-4 的 CSV outputs |
 | 准备面试讨论 | [`INTERVIEW_NOTES.md`](INTERVIEW_NOTES.md) | 提供作品集 pitch 和 bounded claim language |
 | 运行 portfolio validation | [`tools/run_portfolio_validation.py`](tools/run_portfolio_validation.py) | 检查主线项目的 PASS markers |
 
@@ -32,6 +33,7 @@ protocol-complete model。
 - 用 AT four-phase transaction timing 暴露 request / response phase visibility。
 - 分析 multi-initiator arbitration、contention、fairness，以及 p95 / p99 tail latency。
 - 扫描 QoS-like weighted arbitration sensitivity 和 SLA violation。
+- 隔离 locality、MSHR-like pressure、shared-resource interference 和 memory-service bottleneck。
 - 通过 validation harness 和 generated summary 形成可复现 evidence packaging。
 - 展示 architecture judgment：知道模型能支持什么，也知道模型不能支持什么。
 
@@ -44,7 +46,8 @@ protocol-complete model。
 | 3 | Project AT-1 | AT | transaction phases 如何暴露 timing 和 back-pressure？ | AT-1 summary / traces |
 | 4 | Project AT-2 | AT | arbitration policies 如何影响 fairness 和 tail latency？ | policy summary / traces |
 | 5 | Project AT-3 | AT | QoS-like weights、queue/service constraints 如何影响 SLA violations？ | policy sweep / recommendations |
-| 6 | Project P | Portfolio Evidence | 整条建模主线是否可审查、可复现？ | validation harness / generated evidence summary |
+| 6 | Project AT-4 | AT | locality、MSHR-like pressure、shared interference 和 memory service bottleneck 如何相互作用？ | policy sweep / recommendations |
+| 7 | Project P | Portfolio Evidence | 整条建模主线是否可审查、可复现？ | validation harness / generated evidence summary |
 
 ## 快速验证
 
@@ -53,7 +56,8 @@ python3 tools/generate_portfolio_evidence_summary.py --strict
 python3 tools/run_portfolio_validation.py --at-build-dir build-at
 ```
 
-第二条 AT validation command 假设 AT binaries 已经按 AT 文档完成 configure 和 build。
+第二条 AT validation command 假设 `build-at` 已经完成 configure；harness 会使用
+明确的 named project targets 构建 AT-1/2/3/4，不依赖 legacy aggregate `at` target。
 
 ## AT 构建参考
 
@@ -66,6 +70,7 @@ cmake -S examples/at -B build-at \
 cmake --build build-at --target project_at1_four_phase_memory_timing -j
 cmake --build build-at --target project_at2_multi_initiator_arbitration -j
 cmake --build build-at --target project_at3_qos_sensitivity_sla -j
+cmake --build build-at --target project_at4_cache_mshr_pressure -j
 ```
 
 ## Claim Boundary
@@ -104,6 +109,7 @@ cmake --build build-at --target project_at3_qos_sensitivity_sla -j
 | Project AT-1 | Four-phase AT memory transaction timing | `examples/at/four_phase_memory_timing/`、`demo_project_at1_four_phase_memory_timing.py`、`project_at1_summary.csv`、`project_at1_report.md` | 在 synthetic scenarios 下观察 TLM-2.0 AT timing、target queueing、back-pressure 和 request/response phase visibility |
 | Project AT-2 | Multi-initiator AT arbitration and contention | `examples/at/multi_initiator_arbitration/`、`project_at2_summary.csv`、`project_at2_policy_summary.csv`、`project_at2_report.md` | 观察 shared interconnect / memory-target contention、arbitration policy effects、fairness、p95 / p99 tail latency 和 back-pressure |
 | Project AT-3 | QoS sensitivity and SLA violation analysis | `examples/at/qos_sensitivity_sla/`、`project_at3_policy_sweep.csv`、`project_at3_recommendations.csv`、`project_at3_report.md` | 分析 QoS-like weighted arbitration sensitivity、SLA violation rate、queue depth / service latency sensitivity 和 bounded recommendation |
+| Project AT-4 | Cache-like Shared Resource and MSHR Pressure Lab | `examples/at/project_at4_cache_mshr_pressure.cpp`、`project_at4_summary.csv`、`project_at4_policy_sweep.csv`、`project_at4_recommendations.csv`、`project_at4_report.md` | Models locality, MSHR-like pressure, shared-resource interference, and diminishing returns at AT-level without claiming real cache coherence or cycle accuracy. |
 | Project B / C | Normalized trace replay 和 gem5 SE-derived trace replay | normalized trace inputs、`summary.csv`、`comparison.md` | gem5 SE 只作为 offline trace context；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
 | Project D | Standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metric equivalence；不接 SystemC kernel，不做 live co-simulation |
 | Project E | Standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | 用于 queueing 和 bank conflict reasoning 的 memory subsystem abstraction |
@@ -114,7 +120,7 @@ cmake --build build-at --target project_at3_qos_sensitivity_sla -j
 | Project J | Accuracy validation evidence packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`demo_accuracy_validation_packet.py` | claim-bounded evidence packet，显式记录 support status 和 missing evidence |
 | Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`demo_project_k_workload_bottleneck_lab.py` | synthetic trace + simplified banked model 的 trend-level bottleneck attribution |
 | Project L | Evidence-driven memory architecture recommendation | `examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv`、`project_l_recommendation_report.md` | 基于 Project K evidence 的 bounded recommendation layer |
-| Project P | Portfolio evidence pack and validation harness | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md)、[`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md)、`tools/run_portfolio_validation.py` | 对 K/L/AT-1/AT-2/AT-3 做 portfolio-level evidence packaging 和 PASS-marker validation |
+| Project P | Portfolio evidence pack and validation harness | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md)、[`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md)、`tools/run_portfolio_validation.py` | 对 K/L/AT-1/AT-2/AT-3/AT-4 做 portfolio-level evidence packaging 和 PASS-marker validation |
 
 ## Evidence Chain
 
@@ -192,6 +198,13 @@ Project AT-3：
 ```bash
 python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
   --build-dir build-at
+```
+
+Project AT-4：
+
+```bash
+python3 examples/at/tools/demo_at4_cache_mshr_pressure.py \
+  --at-build-dir build-at
 ```
 
 Headless regression harness：

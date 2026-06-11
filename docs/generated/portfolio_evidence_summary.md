@@ -3,7 +3,7 @@
 Generated from reproducible demo outputs.
 
 - schema_version: `p0.1`
-- generated_at_utc: `2026-06-11T06:24:54+00:00`
+- generated_at_utc: `2026-06-11T08:43:11+00:00`
 
 ## 1. Validation Scope
 
@@ -11,6 +11,7 @@ Generated from reproducible demo outputs.
 - Project AT-1: four-phase transaction timing
 - Project AT-2: multi-initiator arbitration and contention
 - Project AT-3: QoS-like sensitivity and SLA violation analysis
+- Project AT-4: cache-like shared-resource and MSHR pressure analysis
 
 ## 2. Project K: LT Bottleneck Summary
 
@@ -83,7 +84,39 @@ Source: `examples/at/results/project_at3_qos_sensitivity_sla/project_at3_recomme
 | shallow_queue_backpressure | target_queue_depth | increase_queue_depth | high | max_violation_rate=0.708; max_p99_ns=1129.000; backpressure=71; fairness_index=1.000 | none | accel0 | PASS | 0.708 | 1129.000 |
 | slow_memory_stress | target_service_latency | reduce_service_latency | high | max_violation_rate=0.875; max_p99_ns=2010.000; backpressure=68; fairness_index=1.000 | none | accel0 | PASS | 0.875 | 2010.000 |
 
-## 8. What This Evidence Pack Supports
+## 8. Project AT-4: Cache-like Shared Resource and MSHR Pressure Lab
+
+- Project AT-4 covers 7 cases and 3 initiators: `cpu0`, `dma0`, and `accel0`.
+- It highlights locality / hit-miss trend, MSHR-like outstanding miss pressure, shared interference / pollution proxy, tail latency p95/p99, and diminishing return when memory service dominates.
+- claim boundary: PASS means bounded AT-level architecture exploration only; it is not real cache coherence, a real L1-L2-L3 hierarchy, cycle accuracy, or silicon validation.
+
+Source: `examples/at/results/project_at4_cache_mshr_pressure/project_at4_policy_sweep.csv`
+
+| case_name | hit_rate | miss_rate | mshr_capacity | mshr_full_events | interference_score | pollution_proxy | p95_total_latency_ns | p99_total_latency_ns | claim_boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cpu_latency_sensitive_hotset | 0.630 | 0.370 | 4 | 2 | 0.120 | 0.129 | 42.172 | 44.843 | PASS |
+| dma_streaming_pollution | 0.370 | 0.630 | 4 | 64 | 0.560 | 0.775 | 468.758 | 471.546 | PASS |
+| accel_tiled_reuse | 0.583 | 0.417 | 4 | 12 | 0.220 | 0.227 | 50.315 | 56.097 | PASS |
+| mixed_cpu_dma_accel_interference | 0.306 | 0.694 | 4 | 71 | 0.760 | 0.915 | 696.430 | 704.522 | PASS |
+| low_mshr_capacity_pressure | 0.259 | 0.741 | 2 | 78 | 0.940 | 0.883 | 1678.277 | 1754.110 | PASS |
+| high_mshr_diminishing_return | 0.324 | 0.676 | 8 | 64 | 0.680 | 0.815 | 370.286 | 377.603 | PASS |
+| slow_memory_mshr_saturation | 0.361 | 0.639 | 8 | 61 | 0.740 | 0.715 | 891.200 | 964.215 | PASS |
+
+## 9. Project AT-4: Architecture Recommendations
+
+Source: `examples/at/results/project_at4_cache_mshr_pressure/project_at4_recommendations.csv`
+
+| case_name | primary_bottleneck | recommended_action | recommendation_priority | evidence_summary | locality_signal | mshr_pressure_signal | interference_signal | pollution_signal | claim_boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cpu_latency_sensitive_hotset | low_pressure_hotset | no_single_dominant_action | low | dominant=low_pressure_hotset; p99=44.843ns; mshr_full_events=2; pollution=0.129 | 0.630 | 0.259 | 0.120 | 0.129 | PASS |
+| dma_streaming_pollution | streaming_dma_pollution | throttle_streaming_dma | high | dominant=streaming_dma_pollution; p99=471.546ns; mshr_full_events=64; pollution=0.775 | 0.370 | 0.833 | 0.560 | 0.775 | PASS |
+| accel_tiled_reuse | locality_sensitive_reuse | improve_locality_or_tiling | medium | dominant=locality_sensitive_reuse; p99=56.097ns; mshr_full_events=12; pollution=0.227 | 0.583 | 0.351 | 0.220 | 0.227 | PASS |
+| mixed_cpu_dma_accel_interference | shared_resource_interference | partition_shared_resource | high | dominant=shared_resource_interference; p99=704.522ns; mshr_full_events=71; pollution=0.915 | 0.306 | 0.897 | 0.760 | 0.915 | PASS |
+| low_mshr_capacity_pressure | mshr_pressure | increase_mshr_capacity | high | dominant=mshr_pressure; p99=1754.110ns; mshr_full_events=78; pollution=0.883 | 0.259 | 1.000 | 0.940 | 0.883 | PASS |
+| high_mshr_diminishing_return | diminishing_mshr_return | no_single_dominant_action | medium | dominant=diminishing_mshr_return; p99=377.603ns; mshr_full_events=64; pollution=0.815 | 0.324 | 0.713 | 0.680 | 0.815 | PASS |
+| slow_memory_mshr_saturation | memory_service_latency | reduce_memory_service_latency | high | dominant=memory_service_latency; p99=964.215ns; mshr_full_events=61; pollution=0.715 | 0.361 | 0.685 | 0.740 | 0.715 | PASS |
+
+## 10. What This Evidence Pack Supports
 
 - workload bottleneck reasoning
 - evidence-driven memory architecture recommendation
@@ -91,8 +124,9 @@ Source: `examples/at/results/project_at3_qos_sensitivity_sla/project_at3_recomme
 - arbitration, fairness, and tail-latency tradeoff discussion
 - QoS-like sensitivity discussion
 - SLA violation and recommendation discussion
+- locality, hit/miss trend, MSHR-like pressure, and shared-resource interference discussion
 - reproducible portfolio validation
 
-## 9. Claim Boundary
+## 11. Claim Boundary
 
 This evidence pack supports bounded architecture modeling discussion only. It does not claim AXI/CHI compliance, cycle accuracy, real NoC modeling, cache coherence modeling, silicon validation, production signoff, real DRAM timing, or real workload performance.

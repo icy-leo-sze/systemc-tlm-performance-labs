@@ -309,6 +309,47 @@ recommendation，不声称 AXI / CHI QoS compliance，不声称 cycle-accurate i
 model，不是真实 NoC，不是 cache coherence model，不是 silicon validation，也不是
 production signoff。
 
+### Project AT-4：Cache-like Shared Resource and MSHR Pressure Lab
+
+Project AT-4 is not a real cache model. It is an architecture-level bottleneck
+isolation lab. It separates four levers:
+
+1. locality
+2. MSHR-like miss-level parallelism
+3. memory service latency
+4. shared traffic interference
+
+面试叙事重点可以这样讲：
+
+- AT-4 把 AT 主线从 transaction timing、arbitration、QoS/SLA 推进到 cache-like
+  shared-resource pressure。
+- `cpu0` 表示 latency-sensitive hotset traffic，`dma0` 表示 streaming pollution /
+  bandwidth pressure，`accel0` 表示 tiled reuse burst traffic。
+- 关键指标是 hit/miss trend、`mshr_full_events`、`pollution_proxy`、
+  `interference_score`、p95/p99 tail latency 和 recommendation。
+- slow-memory / high-MSHR case 用来说明：当 memory service latency 支配时，继续增加
+  outstanding miss capacity 会出现 diminishing return。
+- 这不是 real cache coherence、real L1/L2/L3 hierarchy、replacement policy fidelity、
+  cycle accuracy、silicon validation 或 production signoff。
+
+30 秒口播：
+
+> In AT-4, I intentionally avoid claiming cycle accuracy or real cache coherence.
+> The point is to show how a system architect can isolate locality, outstanding
+> miss pressure, shared-resource interference, and memory-service bottlenecks
+> before committing to detailed RTL or simulator work.
+
+复现命令：
+
+```bash
+cmake -S examples/at -B build-at \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at --target project_at4_cache_mshr_pressure -j
+python3 examples/at/tools/demo_at4_cache_mshr_pressure.py \
+  --at-build-dir build-at
+```
+
 ## 5. 我为什么这样设计实验链路
 
 我把实验链路设计成 `workload → trace → metrics → sweep → comparison → demo`，

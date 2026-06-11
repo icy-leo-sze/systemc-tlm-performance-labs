@@ -19,6 +19,7 @@ class CsvSpec:
     path: Path
     preferred_columns: Sequence[str]
     reproduce_hint: str
+    context_lines: Sequence[str] = ()
 
 
 def repo_root() -> Path:
@@ -270,6 +271,65 @@ def specs() -> List[CsvSpec]:
                 "--build-dir build-at"
             ),
         ),
+        CsvSpec(
+            title="8. Project AT-4: Cache-like Shared Resource and MSHR Pressure Lab",
+            path=Path(
+                "examples/at/results/project_at4_cache_mshr_pressure/"
+                "project_at4_policy_sweep.csv"
+            ),
+            preferred_columns=(
+                "case_name",
+                "hit_rate",
+                "miss_rate",
+                "mshr_capacity",
+                "mshr_full_events",
+                "interference_score",
+                "pollution_proxy",
+                "p95_total_latency_ns",
+                "p99_total_latency_ns",
+                "claim_boundary",
+            ),
+            reproduce_hint=(
+                "python3 examples/at/tools/demo_at4_cache_mshr_pressure.py "
+                "--at-build-dir build-at"
+            ),
+            context_lines=(
+                "Project AT-4 covers 7 cases and 3 initiators: `cpu0`, `dma0`, and `accel0`.",
+                (
+                    "It highlights locality / hit-miss trend, MSHR-like outstanding miss "
+                    "pressure, shared interference / pollution proxy, tail latency p95/p99, "
+                    "and diminishing return when memory service dominates."
+                ),
+                (
+                    "claim boundary: PASS means bounded AT-level architecture exploration only; "
+                    "it is not real cache coherence, a real L1-L2-L3 hierarchy, cycle accuracy, "
+                    "or silicon validation."
+                ),
+            ),
+        ),
+        CsvSpec(
+            title="9. Project AT-4: Architecture Recommendations",
+            path=Path(
+                "examples/at/results/project_at4_cache_mshr_pressure/"
+                "project_at4_recommendations.csv"
+            ),
+            preferred_columns=(
+                "case_name",
+                "primary_bottleneck",
+                "recommended_action",
+                "recommendation_priority",
+                "evidence_summary",
+                "locality_signal",
+                "mshr_pressure_signal",
+                "interference_signal",
+                "pollution_signal",
+                "claim_boundary",
+            ),
+            reproduce_hint=(
+                "python3 examples/at/tools/demo_at4_cache_mshr_pressure.py "
+                "--at-build-dir build-at"
+            ),
+        ),
     ]
 
 
@@ -287,6 +347,11 @@ def section_for_spec(root: Path, spec: CsvSpec) -> Tuple[str, bool]:
             ]
         )
         return "\n".join(lines), True
+
+    for context_line in spec.context_lines:
+        lines.append(f"- {context_line}")
+    if spec.context_lines:
+        lines.append("")
 
     headers, rows = read_csv_rows(full_path)
     selected = select_columns(headers, spec.preferred_columns)
@@ -317,6 +382,7 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
         "- Project AT-1: four-phase transaction timing",
         "- Project AT-2: multi-initiator arbitration and contention",
         "- Project AT-3: QoS-like sensitivity and SLA violation analysis",
+        "- Project AT-4: cache-like shared-resource and MSHR pressure analysis",
         "",
     ]
 
@@ -329,7 +395,7 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
 
     lines.extend(
         [
-            "## 8. What This Evidence Pack Supports",
+            "## 10. What This Evidence Pack Supports",
             "",
             "- workload bottleneck reasoning",
             "- evidence-driven memory architecture recommendation",
@@ -337,9 +403,10 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
             "- arbitration, fairness, and tail-latency tradeoff discussion",
             "- QoS-like sensitivity discussion",
             "- SLA violation and recommendation discussion",
+            "- locality, hit/miss trend, MSHR-like pressure, and shared-resource interference discussion",
             "- reproducible portfolio validation",
             "",
-            "## 9. Claim Boundary",
+            "## 11. Claim Boundary",
             "",
             (
                 "This evidence pack supports bounded architecture modeling discussion only. "
