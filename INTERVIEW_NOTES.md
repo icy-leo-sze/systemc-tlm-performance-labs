@@ -11,6 +11,68 @@ Core chain:
 workload → trace → metrics → sweep → comparison → demo
 ```
 
+## Portfolio Architecture Story Pitch
+
+### 30-second pitch
+
+I built a SystemC/TLM performance modeling portfolio. It starts with LT
+bottleneck characterization and evolves into AT transaction timing, contention,
+QoS-like sensitivity, and SLA violation analysis. The focus is early
+architecture reasoning before RTL, with explicit claim boundaries.
+
+### 90-second pitch
+
+I built this repository as a bounded SystemC/TLM architecture performance
+modeling portfolio. The LT side starts with synthetic workload bottleneck
+characterization: workloads become traces, traces become latency decomposition
+and bottleneck metrics, and those metrics feed evidence-driven architecture
+recommendations. That gives me a fast way to reason about memory subsystem
+sensitivity before RTL.
+
+The AT side then adds transaction timing and contention observability. AT-1
+exposes `BEGIN_REQ`、`END_REQ`、`BEGIN_RESP` 和 `END_RESP` timing. AT-2 compares
+multi-initiator arbitration policies and looks at fairness, back-pressure, and
+p95 / p99 tail latency. AT-3 adds QoS-like weight sensitivity, queue-depth and
+service-latency sweeps, SLA violation detection, and bounded recommendation
+output. The value is not that the model is a production interconnect; the value
+is that each claim is tied to reproducible traces, summaries, reports, and an
+explicit boundary.
+
+### Three interview bullets
+
+- Built reproducible LT and AT modeling labs with trace / summary / report outputs.
+- Modeled contention, arbitration, fairness, tail latency, and QoS-like tradeoffs.
+- Maintained explicit boundaries: no protocol compliance, no cycle accuracy, no silicon validation.
+
+### Boundary statement
+
+This portfolio is designed to demonstrate architecture modeling judgment, not
+to claim production-grade protocol or silicon accuracy.
+
+## Portfolio Evidence Pack Pitch
+
+### 30-second evidence pitch
+
+I built a reproducible portfolio evidence pack around my SystemC/TLM performance
+modeling labs. It connects LT bottleneck analysis, evidence-driven
+recommendations, AT transaction timing, multi-initiator contention, QoS-like
+sensitivity, and SLA violation analysis. The goal is to make architecture
+tradeoffs reviewable and reproducible before RTL.
+
+### Evidence bullets
+
+- Reproducible validation harness across K/L/AT-1/AT-2/AT-3.
+- Generated summary from CSV outputs, not hand-written claims.
+- Latency, throughput, fairness, back-pressure, and SLA metrics.
+- Explicit claim boundary.
+- Useful for SoC performance modeling interview discussion.
+
+### Boundary statement
+
+This evidence pack demonstrates architecture modeling judgment and
+reproducibility. It does not claim protocol compliance, cycle accuracy, silicon
+validation, or production readiness.
+
 ## 1. 60秒项目介绍
 
 这是一个 SystemC/TLM virtual platform performance modeling lab。我的目标不是做一个
@@ -516,7 +578,7 @@ order 和 bus service timing 下的 request acceptance latency。
 答：它把 raw metrics 转成面向工程判断的对比结果。面试官或 reviewer 不需要先读
 全部 trace，也能看到 case 之间的差异。
 
-### Q13: 这个项目是否 cycle accurate？
+### Q13: 这个项目是否具备 cycle accuracy？
 
 答：不是。我会明确说它不声明 cycle accuracy。它是 architecture-level 和
 phase-level 的 performance modeling lab。
