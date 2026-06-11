@@ -112,6 +112,36 @@ The demo only orchestrates the existing AT binary, phase trace analyzer, and
 arbitration sweep runner. It is not an AXI, CHI, NoC, bank-conflict, or
 cycle-accurate timing model.
 
+## Project AT-1: Four-Phase AT Memory Transaction Timing Lab
+
+Project AT-1 adds an independent AT mainline example under
+`examples/at/four_phase_memory_timing/`. It keeps the existing arbitration smoke
+lab unchanged and focuses on a minimal AT memory target with finite queue depth.
+
+The model demonstrates:
+
+- `nb_transport_fw` request path with `BEGIN_REQ` and `END_RESP`
+- `nb_transport_bw` response path with `END_REQ` and `BEGIN_RESP`
+- `sequential`、`bursty`、`hotspot` 三类 synthetic transaction pattern
+- target queueing、initiator stall 和 visible back-pressure
+- per-transaction `trace.csv` with four phase timestamps
+
+Run the one-command Project AT-1 demo:
+
+```bash
+python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
+```
+
+It writes:
+
+- `examples/at/results/project_at1_four_phase_memory_timing/model_runs/<case_name>/trace.csv`
+- `examples/at/results/project_at1_four_phase_memory_timing/project_at1_summary.csv`
+- `examples/at/results/project_at1_four_phase_memory_timing/project_at1_report.md`
+
+Project AT-1 is a SystemC/TLM AT teaching and architecture modeling lab. It is
+not AXI / CHI protocol compliance, not cycle-accurate simulation, not silicon
+validation, not production signoff, and not a real DRAM timing model.
+
 ## Build and Run
 
 From the repository root:

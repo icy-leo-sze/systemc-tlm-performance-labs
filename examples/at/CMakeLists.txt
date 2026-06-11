@@ -18,3 +18,5 @@ target_include_directories(${EXAMPLE_NAME} PRIVATE
 
 include(../../cmake/systemc.cmake)
 include(../../cmake/msvc.cmake)
+
+add_subdirectory(four_phase_memory_timing)

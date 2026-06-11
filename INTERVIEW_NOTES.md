@@ -136,6 +136,33 @@ AT arbitration policy 包括：
 我的解释重点是：AT lab 不是为了声称完整 interconnect，而是为了把 arbitration
 policy 对 phase-level timing 的影响做成可观测、可复现、可比较的实验。
 
+### Project AT-1：Four-Phase AT Memory Transaction Timing Lab
+
+Project AT-1 是 `examples/at` 下新增的独立 AT 主线 demo。它不继续做 LT 统计，而是用
+一个最小 initiator + memory target 展示 TLM-2.0 approximately-timed non-blocking
+transport：initiator 通过 `nb_transport_fw` 发出 `BEGIN_REQ`，target 通过
+`nb_transport_bw` 返回 `END_REQ` 和 `BEGIN_RESP`，initiator 再用 `END_RESP` 结束
+response path。
+
+面试叙事重点可以这样讲：
+
+- LT 把一次 transaction latency 抽象进 blocking call；AT-1 把 request/response phase
+  timing 显式暴露出来。
+- `BEGIN_REQ -> END_REQ` 对应 request acceptance latency，可观察 initiator stall 和
+  target back-pressure。
+- target 维护有限 queue depth，因此 `bursty` 和 `hotspot` pattern 会在 trace 和
+  summary 里出现 `backpressure_events` 与 `initiator_blocked_ns`。
+- 这个 demo 证明我理解 TLM-2.0 non-blocking transport semantics 和 four-phase
+  base-protocol timing。
+- 它适合 early SoC architecture exploration before RTL，但不是 AXI / CHI protocol
+  compliance、cycle-accurate simulation、silicon validation 或 production signoff。
+
+复现命令：
+
+```bash
+python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
+```
+
 ## 5. 我为什么这样设计实验链路
 
 我把实验链路设计成 `workload → trace → metrics → sweep → comparison → demo`，
