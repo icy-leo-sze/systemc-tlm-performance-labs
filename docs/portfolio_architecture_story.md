@@ -5,13 +5,15 @@
 This repository is a portfolio of bounded architecture performance modeling labs.
 它从 LT workload bottleneck characterization 起步，逐步推进到 AT transaction
 timing、multi-initiator contention、QoS-like sensitivity 和 SLA violation
-analysis。项目目标不是 protocol compliance 或 cycle accuracy，而是在 RTL 之前用
+analysis，再到 cache-like shared-resource / MSHR pressure analysis。项目目标不是
+protocol compliance 或 cycle accuracy，而是在 RTL 之前用
 较低成本的模型支持早期 architecture reasoning。它把 synthetic workloads、
 traces、metrics、sweeps 和 generated reports 串成一条可复现链路，让 reviewer
 能看到每个结论来自哪些输入和指标。Project K/L 关注 memory bottleneck 和
 evidence-driven recommendation，Project AT-1/2/3 关注 phase timing、contention、
-fairness、tail latency 和 SLA tradeoff。当前模型适合表达趋势、瓶颈、policy
-sensitivity 和 bounded recommendation，不适合表达真实芯片验证或生产级协议签核。
+fairness、tail latency 和 SLA tradeoff，Project AT-4 关注 locality、MSHR-like
+pressure、shared interference 和 memory-service bottleneck。当前模型适合表达趋势、
+瓶颈、policy sensitivity 和 bounded recommendation，不适合表达真实芯片验证或生产级协议签核。
 这也是它的作品集边界：展示 SoC architecture performance modeling 判断力，而不是把
 教学性模型包装成工业实现。
 
@@ -24,6 +26,7 @@ sensitivity 和 bounded recommendation，不适合表达真实芯片验证或生
 | AT phase timing | Project AT-1 | AT / single-initiator four-phase timing | How do BEGIN_REQ, END_REQ, BEGIN_RESP, END_RESP expose transaction timing? | request accept latency, service latency, response latency, blocked time | trace / summary / report | TLM-2.0 AT phase observability；不是 AXI / CHI protocol implementation 或 cycle accuracy |
 | AT contention | Project AT-2 | AT / multi-initiator contention | How do arbitration policies affect fairness and tail latency? | p95/p99 latency, arbitration delay, back-pressure, fairness index | policy summary and report | bounded contention and arbitration comparison；不是实际 NoC model 或 silicon validation |
 | AT QoS-like sensitivity | Project AT-3 | AT / QoS-like sensitivity and SLA analysis | How do weights, queue depth, and service latency affect SLA violations? | SLA violation rate, p99 latency, fairness, throughput, recommendation | sweep summary, recommendations, report | QoS-like architecture exploration；不是 AXI / CHI QoS compliance、cache coherence 或 production signoff |
+| AT cache-like shared-resource pressure | Project AT-4 | AT / cache-like bottleneck isolation | How do locality, MSHR-like pressure, memory service latency, and shared traffic interference interact? | hit/miss trend, mshr_full_events, interference score, pollution proxy, p95/p99 latency | summary, policy sweep, recommendations, report | cache-like architecture exploration；不是 real cache coherence、real L1/L2/L3 hierarchy、cycle accuracy 或 silicon validation |
 
 ## 3. Why LT and AT Both Matter
 
@@ -38,8 +41,8 @@ throughput 和 sensitivity sweep 观察 memory architecture tradeoff。对于 Pr
 AT 适合观察 transaction phase timing。它把 `BEGIN_REQ`、`END_REQ`、`BEGIN_RESP`
 和 `END_RESP` 暴露到 trace 层，让 request acceptance、response timing、queueing、
 back-pressure、multi-initiator contention 和 QoS-like arbitration tradeoff 可以被
-单独分析。对于 Project AT-1/2/3，AT 更接近早期 SoC architecture exploration 里对
-仲裁、排队、tail latency 和 SLA risk 的讨论方式。
+单独分析。对于 Project AT-1/2/3/4，AT 更接近早期 SoC architecture exploration 里对
+仲裁、排队、tail latency、SLA risk 和 cache-like shared-resource pressure 的讨论方式。
 
 ## 4. Architecture Reasoning Examples
 
@@ -52,9 +55,13 @@ back-pressure、multi-initiator contention 和 QoS-like arbitration tradeoff 可
    需要显式 trade-off review，而不是只报告 protected traffic 的改善。
 4. Project AT-3: 如果 shallow queue depth 提高 back-pressure 和 SLA violation rate，
    queue depth 可能是瓶颈的一部分，应和 service latency 一起 sweep。
-5. Project AT-1/AT-3: 如果 slow memory service 支配所有 initiator 的 latency，
+5. Project AT-4: 如果 streaming DMA traffic 提高 `pollution_proxy` 和 p95/p99 latency，
+   需要把 locality 和 shared-resource interference 分开讨论，而不是把它包装成真实 cache coherence。
+6. Project AT-4: 如果高 MSHR-like capacity 仍然无法降低 slow-memory case 的 tail latency，
+   说明 memory service latency 已经支配，继续增加 outstanding miss slot 会出现 diminishing return。
+7. Project AT-1/AT-3/AT-4: 如果 slow memory service 支配所有 initiator 的 latency，
    arbitration tuning alone cannot solve the problem。
-6. Project AT-2: 如果 round-robin improves fairness but not tail latency，fairness
+8. Project AT-2: 如果 round-robin improves fairness but not tail latency，fairness
    和 latency 应该分开分析，不能用单一分数替代。
 
 ## 5. What This Portfolio Demonstrates
@@ -68,6 +75,8 @@ back-pressure、multi-initiator contention 和 QoS-like arbitration tradeoff 可
 - arbitration policy comparison
 - QoS-like sensitivity analysis
 - SLA violation detection
+- cache-like shared-resource pressure analysis
+- MSHR-like outstanding miss pressure reasoning
 - evidence-driven recommendation
 - claim-boundary discipline
 - reproducible demo scripts
@@ -106,6 +115,9 @@ single initiator to multi-initiator arbitration, where policy choices affect
 fairness, back-pressure, and tail latency. Project AT-3 adds QoS-like
 sensitivity and SLA violation detection, showing how weights, queue depth, and
 service latency interact when traffic classes compete for shared resources.
+Project AT-4 adds a cache-like shared-resource pressure lab that separates
+locality, MSHR-like miss-level parallelism, memory service latency, and shared
+traffic interference without claiming real cache coherence.
 
 The important boundary is that this is not a claim of protocol compliance,
 cycle accuracy, silicon validation, or production signoff. It is a bounded
@@ -119,14 +131,16 @@ claiming any internal company work.
 1. Start with README Project Map.
 2. Read `docs/portfolio_architecture_story.md`.
 3. Run Project AT-3 demo.
-4. Inspect Project AT-3 recommendations.
-5. Backtrack to Project AT-2 for arbitration.
-6. Backtrack to AT-1 for four-phase timing.
-7. Backtrack to K/L for LT bottleneck and recommendation logic.
+4. Run Project AT-4 demo.
+5. Inspect Project AT-4 recommendations.
+6. Backtrack to Project AT-3 for QoS/SLA.
+7. Backtrack to Project AT-2 for arbitration.
+8. Backtrack to AT-1 for four-phase timing.
+9. Backtrack to K/L for LT bottleneck and recommendation logic.
 
 ## 9. Future Roadmap
 
-- AT-4: Regression Dashboard / Portfolio Evidence Pack
-- AT-5: Cache-like Shared Resource Modeling
-- AT-6: NoC-inspired Topology Exploration under explicit non-compliance boundary
+- AT multi-target path and response scheduling under explicit non-compliance boundary.
+- Outstanding transaction depth and shared-resource calibration under bounded references.
+- LT-vs-AT comparison under equivalent synthetic workloads.
 - External trace ingestion from gem5 or synthetic accelerator traces
