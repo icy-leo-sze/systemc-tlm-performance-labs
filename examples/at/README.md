@@ -142,6 +142,46 @@ Project AT-1 is a SystemC/TLM AT teaching and architecture modeling lab. It is
 not AXI / CHI protocol compliance, not cycle-accurate simulation, not silicon
 validation, not production signoff, and not a real DRAM timing model.
 
+## Project AT-2: Multi-Initiator AT Arbitration and Contention Lab
+
+Project AT-2 adds an independent AT mainline example under
+`examples/at/multi_initiator_arbitration/`. It keeps Project AT-1 behavior
+unchanged and extends the AT teaching path from single-initiator four-phase
+timing to multi-initiator contention and arbitration.
+
+The model demonstrates:
+
+- multiple synthetic initiators: `cpu0`, `dma0`, `accel0`
+- `round_robin`, `fixed_priority`, and `weighted_priority` arbitration policy
+- per-initiator request queueing pressure
+- fairness / p95-p99 tail latency tradeoff
+- target queue back-pressure and aggregate throughput comparison
+
+Build and run Project AT-2 from the repository root:
+
+```bash
+cmake -S examples/at -B build-at2 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+
+cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
+
+python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
+  --build-dir build-at2
+```
+
+It writes:
+
+- `examples/at/results/project_at2_multi_initiator_arbitration/model_runs/<case_name>/trace.csv`
+- `examples/at/results/project_at2_multi_initiator_arbitration/project_at2_summary.csv`
+- `examples/at/results/project_at2_multi_initiator_arbitration/project_at2_policy_summary.csv`
+- `examples/at/results/project_at2_multi_initiator_arbitration/project_at2_report.md`
+
+Project AT-2 is a SystemC/TLM AT teaching and architecture modeling lab. It is
+not AXI / CHI protocol compliance, not a cycle-accurate interconnect model, not
+a real NoC model, not silicon validation, not production signoff, not a real
+DRAM timing model, and it does not model cache coherence.
+
 ## Build and Run
 
 From the repository root:
