@@ -32,7 +32,7 @@ silicon validation、full-system cycle accuracy 或 full SoC validation。
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
 | LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model、gem5 stats trend correlation report | `python3 examples/lt/tools/demo_performance_lab.py` |
-| AT 仲裁实验室 | [`examples/at`](examples/at) | AT | TLM phase trace 和 arbitration policy sweep | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at` |
+| AT 仲裁与四阶段时序实验室 | [`examples/at`](examples/at) | AT | TLM phase trace、arbitration policy sweep、four-phase memory transaction timing、target queueing 和 back-pressure observability | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at`；`python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py` |
 
 详细说明：
 
@@ -72,6 +72,7 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 | Project | 当前角色 | 主要产物 | 当前 claim 边界 |
 | --- | --- | --- | --- |
 | LT / AT labs | 主实验链路 | `examples/lt`、`examples/at`、demo、sweep、comparison report | architecture-level performance workflow 和 AT phase observability；不是 protocol-complete 或 cycle-accurate model |
+| Project AT-1 | Four-Phase AT Memory Transaction Timing Lab | `examples/at/four_phase_memory_timing/`、`demo_project_at1_four_phase_memory_timing.py`、`project_at1_summary.csv`、`project_at1_report.md` | TLM-2.0 approximately-timed non-blocking transport teaching / architecture modeling；展示 `nb_transport_fw` / `nb_transport_bw`、四阶段 timing、target queueing 和 back-pressure；不是 AXI / CHI compliance、cycle accuracy、silicon validation 或 production signoff |
 | Project B / C | normalized trace replay 和 gem5 SE-derived trace replay | normalized trace、`summary.csv`、`comparison.md` | gem5 SE 是 offline trace producer；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
 | Project D | standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metrics equivalence；不接 SystemC kernel，不做 live co-simulation |
 | Project E | standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | memory subsystem abstraction；不是 JEDEC DRAM timing 或 production controller |
@@ -259,6 +260,12 @@ python3 examples/at/tools/demo_at_lab.py \
   --binary ./build/examples/at/at
 ```
 
+运行 Project AT-1 four-phase memory timing demo：
+
+```bash
+python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
+```
+
 运行 LT one-command demo：
 
 ```bash
@@ -333,6 +340,9 @@ python3 examples/lt/tools/demo_accuracy_validation_packet.py
 | AT | `fifo` | `complete_transactions = 4` |
 | AT | `priority_101` | `101xxx` 更快被接受：`101xxx avg = 1.000 ns`，`102xxx avg = 6.000 ns` |
 | AT | `priority_102` | `102xxx` 更快被接受：`102xxx avg = 1.000 ns`，`101xxx avg = 6.000 ns` |
+| Project AT-1 | `sequential_moderate_gap` | `avg_request_accept_latency_ns = 1.000`，`backpressure_events = 0` |
+| Project AT-1 | `bursty_queue_pressure` | `avg_initiator_blocked_ns = 9.167`，`backpressure_events = 10` |
+| Project AT-1 | `hotspot_backpressure` | `avg_initiator_blocked_ns = 14.667`，`backpressure_events = 11` |
 
 ## Validation Ladder / Evidence Chain
 
@@ -367,6 +377,8 @@ budget 和 status 汇总为 evidence packet；如果 Project H / I generated res
 - LT lab 支持 architecture-level latency decomposition、workload sweep、normalized trace
   replay、standalone C++ replay 和 banked memory controller queueing analysis。
 - AT lab 支持 TLM-2.0 base protocol phase trace 和 arbitration observability。
+- Project AT-1 支持 TLM-2.0 AT four-phase transaction timing、target queueing、
+  initiator stall / back-pressure 和 request/response phase timing observability。
 - Project D 支持 Python vs C++ replay summary equivalence。
 - Project E 支持 bounded standalone C++ memory subsystem queueing model analysis。
 - Project F 支持 selected workloads 下的 gem5 stats trend-level correlation report。
