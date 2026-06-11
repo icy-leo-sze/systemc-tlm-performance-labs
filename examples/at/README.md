@@ -182,6 +182,51 @@ not AXI / CHI protocol compliance, not a cycle-accurate interconnect model, not
 a real NoC model, not silicon validation, not production signoff, not a real
 DRAM timing model, and it does not model cache coherence.
 
+## Project AT-3: QoS Sensitivity and SLA Violation Lab
+
+Project AT-3 adds an independent AT mainline example under
+`examples/at/qos_sensitivity_sla/`. It keeps Project AT-1 and Project AT-2
+behavior unchanged and extends the AT path from arbitration observability to
+QoS sensitivity, SLA violation detection, and bounded architecture
+recommendation.
+
+The model demonstrates:
+
+- synthetic traffic classes: `cpu0`, `dma0`, `accel0`
+- QoS-like weighted arbitration with `balanced`, `cpu_favored`, `dma_favored`,
+  and `accel_favored` design points
+- p95 / p99 total latency and per-initiator SLA violation rate
+- queue depth / service latency / burstiness sensitivity
+- protected traffic class vs fairness tradeoff
+- bounded recommendation output from generated evidence
+
+Build and run Project AT-3 from the repository root:
+
+```bash
+cmake -S examples/at -B build-at3 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+
+cmake --build build-at3 --target project_at3_qos_sensitivity_sla -j
+
+python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
+  --build-dir build-at3
+```
+
+It writes:
+
+- `examples/at/results/project_at3_qos_sensitivity_sla/model_runs/<case_name>/trace.csv`
+- `examples/at/results/project_at3_qos_sensitivity_sla/project_at3_summary.csv`
+- `examples/at/results/project_at3_qos_sensitivity_sla/project_at3_policy_sweep.csv`
+- `examples/at/results/project_at3_qos_sensitivity_sla/project_at3_recommendations.csv`
+- `examples/at/results/project_at3_qos_sensitivity_sla/project_at3_report.md`
+
+Project AT-3 is a SystemC/TLM AT teaching and architecture modeling lab. Its
+weighted arbitration is QoS-like, but it is not AXI / CHI QoS compliance, not a
+cycle-accurate interconnect model, not a real NoC model, not a cache coherence
+model, not silicon validation, not production signoff, and not a real DRAM
+timing model.
+
 ## Build and Run
 
 From the repository root:

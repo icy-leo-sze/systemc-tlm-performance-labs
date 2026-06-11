@@ -205,6 +205,48 @@ SoC architecture exploration 和 arbitration tradeoff；它不是 AXI / CHI prot
 compliance，不是 cycle-accurate interconnect model，不是真实 NoC，不是 silicon
 validation，也不是 production signoff。
 
+### Project AT-3：QoS Sensitivity and SLA Violation Lab
+
+Project AT-3 是 AT 主线的第三阶段。AT-1 展示 single transaction phase timing；
+AT-2 展示多个 initiator 的 arbitration、contention、fairness 和 tail latency；
+AT-3 则把问题推进到 QoS-like weighted arbitration、SLA violation detection 和
+bounded architecture recommendation。
+
+模型里仍然使用 synthetic `cpu0`、`dma0`、`accel0` traffic，但每个 initiator 有明确
+traffic class 和 SLA target latency。demo 会扫描不同 weight vector、queue depth、
+service latency 和 burstiness，生成 per-transaction trace、initiator summary、
+policy sweep 和 recommendation CSV。
+
+面试叙事重点可以这样讲：
+
+- QoS-like weighted arbitration 可以保护某一类 latency-sensitive traffic，例如
+  `accel0` 或 interactive `cpu0`。
+- 保护一个 traffic class 往往会牺牲 fairness，或者把 p95 / p99 tail latency 转移给
+  其他 initiator。
+- SLA violation rate 比平均 latency 更适合表达 tail-risk，尤其适合讨论 early SoC
+  architecture tradeoff。
+- shallow queue 会放大 back-pressure 和 SLA violation；slow memory service 是 target
+  bottleneck，不能只靠 arbitration weight 解决。
+- Project AT-3 的价值不是声称真实 AXI QoS / CHI QoS，而是用可复现 sweep 帮助 RTL 前
+  判断该调 weight、加 queue depth、降低 service latency，还是降低 burstiness。
+
+复现命令：
+
+```bash
+cmake -S examples/at -B build-at3 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at3 --target project_at3_qos_sensitivity_sla -j
+python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
+  --build-dir build-at3
+```
+
+边界讲法要保持清楚：AT-3 是 teaching / architecture modeling lab。它支持 bounded
+QoS sensitivity、SLA violation analysis、protected traffic class 和 architecture
+recommendation，不声称 AXI / CHI QoS compliance，不声称 cycle-accurate interconnect
+model，不是真实 NoC，不是 cache coherence model，不是 silicon validation，也不是
+production signoff。
+
 ## 5. 我为什么这样设计实验链路
 
 我把实验链路设计成 `workload → trace → metrics → sweep → comparison → demo`，
