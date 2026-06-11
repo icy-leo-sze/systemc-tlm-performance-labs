@@ -67,6 +67,18 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 输出语义。详细说明见
 [`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
 
+## Portfolio Architecture Story
+
+[`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md)
+is the portfolio narrative entry point. This page connects the LT and AT labs
+into a coherent early SoC performance modeling portfolio.
+
+演进链路：Project K 用 LT synthetic workloads 做 memory bottleneck
+characterization，Project L 把指标转成 bounded architecture recommendation，
+Project AT-1 展示 four-phase AT transaction timing，Project AT-2 比较
+multi-initiator arbitration / contention，Project AT-3 进一步分析 QoS-like
+sensitivity 和 SLA violation。
+
 ## Project Map
 
 | Project | 当前角色 | 主要产物 | 当前 claim 边界 |
@@ -492,7 +504,7 @@ budget 和 status 汇总为 evidence packet；如果 Project H / I generated res
 - 不声称 full-system cycle accuracy。
 - 不声称 full SoC validation。
 - 不声称 AXI、CHI、NoC protocol compliance 或 production interconnect support。
-- 不声称 real DRAM timing validation 或 real product memory-controller validation。
+- 不声称真实 DRAM timing validation 或真实 product memory-controller validation。
 - 不声称 gem5-SystemC live co-simulation。
 - 不声称 full-system Linux timing validation。
 - 不把 Project H 的 local Verilator RTL banked memory controller reference 扩大成 full
