@@ -21,3 +21,4 @@ include(../../cmake/msvc.cmake)
 
 add_subdirectory(four_phase_memory_timing)
 add_subdirectory(multi_initiator_arbitration)
+add_subdirectory(qos_sensitivity_sla)

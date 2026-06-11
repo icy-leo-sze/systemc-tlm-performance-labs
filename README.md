@@ -32,7 +32,7 @@ silicon validation、full-system cycle accuracy 或 full SoC validation。
 | 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
 | --- | --- | --- | --- | --- |
 | LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model、gem5 stats trend correlation report | `python3 examples/lt/tools/demo_performance_lab.py` |
-| AT 仲裁与四阶段时序实验室 | [`examples/at`](examples/at) | AT | TLM phase trace、arbitration policy sweep、four-phase memory transaction timing、multi-initiator contention、arbitration policy、fairness / tail latency tradeoff、target queueing 和 back-pressure observability | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at`；`python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py`；`python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py --build-dir build-at2` |
+| AT 仲裁与四阶段时序实验室 | [`examples/at`](examples/at) | AT | TLM phase trace、arbitration policy sweep、four-phase memory transaction timing、multi-initiator contention、arbitration policy、QoS-like weighted arbitration、SLA violation analysis、fairness / tail latency tradeoff、target queueing 和 back-pressure observability | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at`；`python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py`；`python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py --build-dir build-at2`；`python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py --build-dir build-at3` |
 
 详细说明：
 
@@ -74,6 +74,7 @@ Project F 在这些 generated summaries 之上生成 qualitative trend report，
 | LT / AT labs | 主实验链路 | `examples/lt`、`examples/at`、demo、sweep、comparison report | architecture-level performance workflow 和 AT phase observability；不是 protocol-complete 或 cycle-accurate model |
 | Project AT-1 | Four-Phase AT Memory Transaction Timing Lab | `examples/at/four_phase_memory_timing/`、`demo_project_at1_four_phase_memory_timing.py`、`project_at1_summary.csv`、`project_at1_report.md` | TLM-2.0 approximately-timed non-blocking transport teaching / architecture modeling；展示 `nb_transport_fw` / `nb_transport_bw`、四阶段 timing、target queueing 和 back-pressure；不是 AXI / CHI compliance、cycle accuracy、silicon validation 或 production signoff |
 | Project AT-2 | Multi-Initiator AT Arbitration and Contention Lab | `examples/at/multi_initiator_arbitration/`、`demo_project_at2_multi_initiator_arbitration.py`、`project_at2_summary.csv`、`project_at2_policy_summary.csv`、`project_at2_report.md` | 多 initiator 共享 AT interconnect / memory target 的 contention、arbitration policy、queueing pressure、fairness / p95-p99 tail latency 和 back-pressure 观察；不是 AXI / CHI protocol compliance、cycle-accurate interconnect、真实 NoC、silicon validation 或 production signoff |
+| Project AT-3 | QoS Sensitivity and SLA Violation Lab | `examples/at/qos_sensitivity_sla/`、`demo_project_at3_qos_sensitivity_sla.py`、`project_at3_policy_sweep.csv`、`project_at3_recommendations.csv`、`project_at3_report.md` | QoS-like weighted arbitration、SLA violation analysis、queue depth / service latency sensitivity、protected traffic class vs fairness tradeoff、bounded architecture recommendation；不是 AXI / CHI QoS compliance、cycle-accurate interconnect、真实 NoC、cache coherence、silicon validation 或 production signoff |
 | Project B / C | normalized trace replay 和 gem5 SE-derived trace replay | normalized trace、`summary.csv`、`comparison.md` | gem5 SE 是 offline trace producer；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
 | Project D | standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metrics equivalence；不接 SystemC kernel，不做 live co-simulation |
 | Project E | standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | memory subsystem abstraction；不是 JEDEC DRAM timing 或 production controller |
@@ -118,6 +119,41 @@ Project AT-2 是教学性、架构探索性的 SystemC/TLM AT lab。它展示多
 contention、arbitration policy、queueing pressure、fairness / tail latency tradeoff
 和 back-pressure，但不声称 AXI / CHI protocol compliance，不声称 cycle accuracy，
 不声称真实 NoC、真实 DRAM timing、silicon validation 或 production signoff。
+
+## Project AT-3：QoS Sensitivity and SLA Violation Lab
+
+Project AT-3 在 Project AT-2 的 multi-initiator arbitration / contention 基础上，
+新增一个独立 AT demo。它用 `cpu0`、`dma0`、`accel0` 三类 synthetic traffic 扫描
+QoS-like weight、queue depth、target service latency 和 burstiness，观察 p95 / p99
+latency、fairness、throughput、back-pressure 和 SLA violation rate。
+
+运行命令：
+
+```bash
+cmake -S examples/at -B build-at3 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at3 --target project_at3_qos_sensitivity_sla -j
+
+python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
+  --build-dir build-at3
+```
+
+关键输出：
+
+```text
+examples/at/results/project_at3_qos_sensitivity_sla/model_runs/<case_name>/trace.csv
+examples/at/results/project_at3_qos_sensitivity_sla/project_at3_summary.csv
+examples/at/results/project_at3_qos_sensitivity_sla/project_at3_policy_sweep.csv
+examples/at/results/project_at3_qos_sensitivity_sla/project_at3_recommendations.csv
+examples/at/results/project_at3_qos_sensitivity_sla/project_at3_report.md
+```
+
+Project AT-3 的 claim 边界是 bounded SoC architecture exploration。它展示
+QoS-like weighted arbitration、SLA violation detection、traffic-class protection、
+fairness vs tail-latency tradeoff 和 architecture recommendation，但不声称 AXI / CHI
+QoS compliance，不声称 cycle-accurate interconnect、真实 NoC、cache coherence、
+silicon validation 或 production signoff。
 
 ## Project D：Standalone C++ Trace Replay Engine
 
@@ -310,6 +346,17 @@ cmake -S examples/at -B build-at2 \
 cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
 python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
   --build-dir build-at2
+```
+
+运行 Project AT-3 QoS sensitivity and SLA violation demo：
+
+```bash
+cmake -S examples/at -B build-at3 \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at3 --target project_at3_qos_sensitivity_sla -j
+python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
+  --build-dir build-at3
 ```
 
 运行 LT one-command demo：
