@@ -1,18 +1,130 @@
-# SystemC/TLM Architecture Performance Labs
+# SystemC/TLM 架构性能建模作品集
 
-## 项目定位
+这是一个边界清晰的 SystemC/TLM 早期 SoC 性能建模作品集，覆盖从 LT workload
+bottleneck analysis 到 AT transaction timing、arbitration、QoS-like sensitivity、
+SLA violation analysis，以及可复现 evidence packaging 的完整链路。
 
-本仓库是一个 SystemC/TLM 架构级性能建模与验证证据实验室。项目从 LT 架构级性能工作流
-起步，并逐步扩展到 AT phase-level timing refinement、standalone C++ replay / memory
-subsystem modeling、bounded RTL reference correlation，以及 profiler / counter / evidence
-packet 接口。部分 LT 示例保留了 Renode-SystemC 集成基础，但当前项目的重点不是 fork
-来源，而是一条可重复、可审计的实验链路：
+> 架构建模只有在 assumptions、metrics 和 claim boundaries 可见时才有价值。
+
+本仓库展示的是一条系统级 architecture modeling workflow：
 
 ```text
-workload -> trace -> metrics -> sweep -> comparison -> demo
+workload pattern -> transaction model -> latency / throughput / fairness / SLA metrics -> bottleneck diagnosis -> evidence-driven recommendation
 ```
 
-新增的 validation 主线把这条链路扩展为：
+它面向可审查的 architecture reasoning 和作品集表达，不是 production simulator，也不是
+protocol-complete model。
+
+## 从这里开始
+
+| 读者目标 | 建议入口 | 为什么 |
+| --- | --- | --- |
+| 理解整体架构叙事 | [`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md) | 把 LT 和 AT labs 串成一条作品集主线 |
+| 审查可复现证据 | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md) | 解释 validation flow 和 generated artifacts |
+| 查看指标摘要 | [`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md) | 汇总 K/L/AT-1/AT-2/AT-3 的 CSV outputs |
+| 准备面试讨论 | [`INTERVIEW_NOTES.md`](INTERVIEW_NOTES.md) | 提供作品集 pitch 和 bounded claim language |
+| 运行 portfolio validation | [`tools/run_portfolio_validation.py`](tools/run_portfolio_validation.py) | 检查主线项目的 PASS markers |
+
+## 这个作品集展示什么
+
+- 在明确 synthetic workload 边界下进行 LT workload bottleneck characterization。
+- 用 generated metrics 支撑 memory architecture recommendation，而不是手写结论。
+- 用 AT four-phase transaction timing 暴露 request / response phase visibility。
+- 分析 multi-initiator arbitration、contention、fairness，以及 p95 / p99 tail latency。
+- 扫描 QoS-like weighted arbitration sensitivity 和 SLA violation。
+- 通过 validation harness 和 generated summary 形成可复现 evidence packaging。
+- 展示 architecture judgment：知道模型能支持什么，也知道模型不能支持什么。
+
+## 建模链路
+
+| Stage | Project | Modeling Level | Main Question | Primary Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | Project K | LT | 哪些 workload patterns 会暴露 memory bottlenecks？ | workload summary / sweep / report |
+| 2 | Project L | LT | 哪些 architecture action 被指标支持？ | recommendation CSV / report |
+| 3 | Project AT-1 | AT | transaction phases 如何暴露 timing 和 back-pressure？ | AT-1 summary / traces |
+| 4 | Project AT-2 | AT | arbitration policies 如何影响 fairness 和 tail latency？ | policy summary / traces |
+| 5 | Project AT-3 | AT | QoS-like weights、queue/service constraints 如何影响 SLA violations？ | policy sweep / recommendations |
+| 6 | Project P | Portfolio Evidence | 整条建模主线是否可审查、可复现？ | validation harness / generated evidence summary |
+
+## 快速验证
+
+```bash
+python3 tools/generate_portfolio_evidence_summary.py --strict
+python3 tools/run_portfolio_validation.py --at-build-dir build-at
+```
+
+第二条 AT validation command 假设 AT binaries 已经按 AT 文档完成 configure 和 build。
+
+## AT 构建参考
+
+首页快速路径使用独立的 `examples/at` build directory，避免把 root CMake 作为唯一入口。
+
+```bash
+cmake -S examples/at -B build-at \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at --target project_at1_four_phase_memory_timing -j
+cmake --build build-at --target project_at2_multi_initiator_arbitration -j
+cmake --build build-at --target project_at3_qos_sensitivity_sla -j
+```
+
+## Claim Boundary
+
+这个作品集支持有边界的 early architecture modeling discussion。它不声称：
+
+- AXI / CHI protocol compliance
+- cycle accuracy
+- 真实 NoC 建模
+- cache coherence modeling
+- 真实 DRAM timing
+- silicon validation
+- production signoff
+- GPU、LLM、Transformer、GEMM、FlashAttention、Apple、NVIDIA 或 Arm 产品的真实 workload performance
+
+本仓库的价值在于建模纪律：定义 workload assumptions，暴露 timing 和 contention signals，
+生成 metrics，并且只在 evidence boundary 内做 architecture recommendation。
+
+## Repository Map
+
+| Area | Path | Purpose |
+| --- | --- | --- |
+| LT labs | [`examples/lt/`](examples/lt/) | Loosely-timed memory bottleneck 与 recommendation labs |
+| AT labs | [`examples/at/`](examples/at/) | Approximately-timed transaction、arbitration、QoS 与 SLA labs |
+| Portfolio docs | [`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md) | 高层 architecture narrative |
+| Evidence pack | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md) | Reproducibility 和 artifact map |
+| Generated evidence | [`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md) | 从 CSV outputs 生成的 summary |
+| Validation tools | [`tools/`](tools/) | Portfolio-level validation 和 evidence generation |
+| Interview notes | [`INTERVIEW_NOTES.md`](INTERVIEW_NOTES.md) | 有边界的 portfolio pitch 和 discussion notes |
+
+## Project Map
+
+| Project | 当前角色 | 主要产物 | 当前 claim 边界 |
+| --- | --- | --- | --- |
+| LT / AT labs | 主实验链路 | `examples/lt`、`examples/at`、demos、sweeps、comparison reports | architecture-level performance workflow 和 AT phase observability；不是 protocol-complete model，也不是 cycle-accuracy evidence |
+| Project AT-1 | Four-phase AT memory transaction timing | `examples/at/four_phase_memory_timing/`、`demo_project_at1_four_phase_memory_timing.py`、`project_at1_summary.csv`、`project_at1_report.md` | 在 synthetic scenarios 下观察 TLM-2.0 AT timing、target queueing、back-pressure 和 request/response phase visibility |
+| Project AT-2 | Multi-initiator AT arbitration and contention | `examples/at/multi_initiator_arbitration/`、`project_at2_summary.csv`、`project_at2_policy_summary.csv`、`project_at2_report.md` | 观察 shared interconnect / memory-target contention、arbitration policy effects、fairness、p95 / p99 tail latency 和 back-pressure |
+| Project AT-3 | QoS sensitivity and SLA violation analysis | `examples/at/qos_sensitivity_sla/`、`project_at3_policy_sweep.csv`、`project_at3_recommendations.csv`、`project_at3_report.md` | 分析 QoS-like weighted arbitration sensitivity、SLA violation rate、queue depth / service latency sensitivity 和 bounded recommendation |
+| Project B / C | Normalized trace replay 和 gem5 SE-derived trace replay | normalized trace inputs、`summary.csv`、`comparison.md` | gem5 SE 只作为 offline trace context；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
+| Project D | Standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metric equivalence；不接 SystemC kernel，不做 live co-simulation |
+| Project E | Standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | 用于 queueing 和 bank conflict reasoning 的 memory subsystem abstraction |
+| Project F | gem5 stats trend correlation report | `correlation_summary.csv`、`correlation_report.md` | selected workloads 下的 qualitative trend-level comparison |
+| Project G | Golden reference correlation roadmap | [`docs/project_g_golden_reference_correlation_plan.md`](docs/project_g_golden_reference_correlation_plan.md)、[`docs/accuracy_validation_taxonomy.md`](docs/accuracy_validation_taxonomy.md) | roadmap / taxonomy / claim-boundary document；不新增 observed error claim |
+| Project H | Verilator RTL golden model MVP | [`docs/project_h_verilator_rtl_golden_model_report.md`](docs/project_h_verilator_rtl_golden_model_report.md)、`examples/lt/rtl_banked_memory_controller/`、`demo_rtl_golden_model_lab.py` | 只针对本仓库 banked memory controller 的 local Verilator RTL reference |
+| Project I | Profiler / counter correlation interface | [`docs/project_i_profiler_counter_correlation_interface_report.md`](docs/project_i_profiler_counter_correlation_interface_report.md)、`demo_profiler_counter_correlation_lab.py` | sample-only profiler/counter schema 和 ingest interface |
+| Project J | Accuracy validation evidence packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`demo_accuracy_validation_packet.py` | claim-bounded evidence packet，显式记录 support status 和 missing evidence |
+| Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`demo_project_k_workload_bottleneck_lab.py` | synthetic trace + simplified banked model 的 trend-level bottleneck attribution |
+| Project L | Evidence-driven memory architecture recommendation | `examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv`、`project_l_recommendation_report.md` | 基于 Project K evidence 的 bounded recommendation layer |
+| Project P | Portfolio evidence pack and validation harness | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md)、[`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md)、`tools/run_portfolio_validation.py` | 对 K/L/AT-1/AT-2/AT-3 做 portfolio-level evidence packaging 和 PASS-marker validation |
+
+## Evidence Chain
+
+当前 portfolio 主线是：
+
+```text
+workload -> trace -> metrics -> sweep -> comparison -> demo -> evidence summary -> validation harness
+```
+
+Projects G/H/I/J 使用的 validation-oriented line 是：
 
 ```text
 workload
@@ -24,526 +136,104 @@ workload
 -> validation packet
 ```
 
-本项目不是 cycle-accurate AXI、CHI 或 NoC 模型，也不声称 production signoff、
-silicon validation、full-system cycle accuracy 或 full SoC validation。
-
-## 项目目录
-
-| 实验室 | 路径 | 抽象层级 | 主要能力 | 演示命令 |
-| --- | --- | --- | --- | --- |
-| LT 性能实验室 | [`examples/lt`](examples/lt) | LT | 延迟分解、workload sweep、memory access pattern sweep、normalized trace replay、gem5 SE-derived trace replay、standalone C++ replay engine、banked memory controller queueing model、gem5 stats trend correlation report | `python3 examples/lt/tools/demo_performance_lab.py` |
-| AT 仲裁与四阶段时序实验室 | [`examples/at`](examples/at) | AT | TLM phase trace、arbitration policy sweep、four-phase memory transaction timing、multi-initiator contention、arbitration policy、QoS-like weighted arbitration、SLA violation analysis、fairness / tail latency tradeoff、target queueing 和 back-pressure observability | `python3 examples/at/tools/demo_at_lab.py --binary ./build/examples/at/at`；`python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py`；`python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py --build-dir build-at2`；`python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py --build-dir build-at3` |
-
-详细说明：
-
-- LT 工作流：[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)
-- AT 工作流：[`examples/at/README.md`](examples/at/README.md)
-
-LT lab 现在支持六类边界清晰的流量来源、replay backend 和 trend report：
-
-1. 内建 synthetic memory access pattern sweep。
-2. normalized external trace replay MVP。
-3. gem5 SE-derived normalized traces。
-4. standalone C++ trace replay engine。
-5. standalone C++ banked memory controller queueing model。
-6. gem5 SE stats vs replay model trend correlation report。
-
-这条演进线是：
-
-```text
-Python trace replay
--> gem5 SE-derived trace
--> standalone C++ replay engine
--> banked memory controller queueing model
--> gem5 stats trend correlation report
-```
-
-前四个 replay / model backend 都保持同一条 `trace -> metrics -> summary.csv ->
-comparison.md` 链路。Project C 中 gem5 只作为 offline trace producer，SystemC/TLM lab
-作为 replay and analysis backend。Project D 则把 Project B / Project C 当前 Python
-replay 的核心 metrics 逻辑迁移到 standalone C++ replay engine；Python 仍负责 demo
-orchestration、Python vs C++ metrics equivalence check 和 `comparison.md` 生成。
-Project F 在这些 generated summaries 之上生成 qualitative trend report，不改变既有
-输出语义。详细说明见
-[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
-
-## Portfolio Architecture Story
-
-[`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md)
-is the portfolio narrative entry point. This page connects the LT and AT labs
-into a coherent early SoC performance modeling portfolio.
-
-演进链路：Project K 用 LT synthetic workloads 做 memory bottleneck
-characterization，Project L 把指标转成 bounded architecture recommendation，
-Project AT-1 展示 four-phase AT transaction timing，Project AT-2 比较
-multi-initiator arbitration / contention，Project AT-3 进一步分析 QoS-like
-sensitivity 和 SLA violation。
-
-## Portfolio Evidence Pack
-
-Project P 把 Project K/L 与 Project AT-1/AT-2/AT-3 串成一份可复现的 portfolio
-evidence pack。入口文档是
-[`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md)，整体叙事见
-[`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md)，CSV-derived
-指标摘要见
-[`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md)。
-
-最小验证命令：
-
-```bash
-python3 tools/run_portfolio_validation.py --at-build-dir build-at
-python3 tools/generate_portfolio_evidence_summary.py --strict
-```
-
-Project P 只做 portfolio-level harness 和 evidence summary，不修改 K/L/AT-1/AT-2/AT-3
-模型行为，也不扩大 claim boundary。
-
-## Project Map
-
-| Project | 当前角色 | 主要产物 | 当前 claim 边界 |
-| --- | --- | --- | --- |
-| LT / AT labs | 主实验链路 | `examples/lt`、`examples/at`、demo、sweep、comparison report | architecture-level performance workflow 和 AT phase observability；不是 protocol-complete 或 cycle-accurate model |
-| Project AT-1 | Four-Phase AT Memory Transaction Timing Lab | `examples/at/four_phase_memory_timing/`、`demo_project_at1_four_phase_memory_timing.py`、`project_at1_summary.csv`、`project_at1_report.md` | TLM-2.0 approximately-timed non-blocking transport teaching / architecture modeling；展示 `nb_transport_fw` / `nb_transport_bw`、四阶段 timing、target queueing 和 back-pressure；不是 AXI / CHI compliance、cycle accuracy、silicon validation 或 production signoff |
-| Project AT-2 | Multi-Initiator AT Arbitration and Contention Lab | `examples/at/multi_initiator_arbitration/`、`demo_project_at2_multi_initiator_arbitration.py`、`project_at2_summary.csv`、`project_at2_policy_summary.csv`、`project_at2_report.md` | 多 initiator 共享 AT interconnect / memory target 的 contention、arbitration policy、queueing pressure、fairness / p95-p99 tail latency 和 back-pressure 观察；不是 AXI / CHI protocol compliance、cycle-accurate interconnect、真实 NoC、silicon validation 或 production signoff |
-| Project AT-3 | QoS Sensitivity and SLA Violation Lab | `examples/at/qos_sensitivity_sla/`、`demo_project_at3_qos_sensitivity_sla.py`、`project_at3_policy_sweep.csv`、`project_at3_recommendations.csv`、`project_at3_report.md` | QoS-like weighted arbitration、SLA violation analysis、queue depth / service latency sensitivity、protected traffic class vs fairness tradeoff、bounded architecture recommendation；不是 AXI / CHI QoS compliance、cycle-accurate interconnect、真实 NoC、cache coherence、silicon validation 或 production signoff |
-| Project B / C | normalized trace replay 和 gem5 SE-derived trace replay | normalized trace、`summary.csv`、`comparison.md` | gem5 SE 是 offline trace producer；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
-| Project D | standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metrics equivalence；不接 SystemC kernel，不做 live co-simulation |
-| Project E | standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | memory subsystem abstraction；不是 JEDEC DRAM timing 或 production controller |
-| Project F | gem5 stats trend correlation report | `correlation_summary.csv`、`correlation_report.md` | qualitative trend-level correlation；不是 RTL、profiler、counter 或 silicon validation |
-| Project G | Golden Reference Correlation Roadmap | [`docs/project_g_golden_reference_correlation_plan.md`](docs/project_g_golden_reference_correlation_plan.md)、[`docs/accuracy_validation_taxonomy.md`](docs/accuracy_validation_taxonomy.md) | roadmap / taxonomy / claim-boundary document；不新增模型或 observed error |
-| Project H | Verilator RTL Golden Model MVP | [`docs/project_h_verilator_rtl_golden_model_report.md`](docs/project_h_verilator_rtl_golden_model_report.md)、`examples/lt/rtl_banked_memory_controller/`、`examples/lt/tools/demo_rtl_golden_model_lab.py` | local Verilator RTL reference for banked memory controller only；不是 full SoC、silicon 或 production RTL validation |
-| Project I | Profiler / Counter Correlation Interface | [`docs/project_i_profiler_counter_correlation_interface_report.md`](docs/project_i_profiler_counter_correlation_interface_report.md)、`examples/lt/tools/demo_profiler_counter_correlation_lab.py` | sample-only profiler/counter schema and ingest interface；不是 hardware counter validation |
-| Project J | Accuracy Validation Evidence Packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`examples/lt/tools/demo_accuracy_validation_packet.py` | claim-bounded evidence packet；不是 silicon validation、production signoff 或 full-system cycle accuracy |
-| Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`examples/lt/tools/demo_project_k_workload_bottleneck_lab.py` | synthetic trace + Project E simplified banked model 的趋势级 bottleneck attribution；不是 GPU、AI kernel、silicon 或 hardware-counter validation |
-| Project L | Evidence-driven memory architecture recommendation | `examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv`、`project_l_recommendation_report.md` | Project K evidence 上的 bounded recommendation layer；不是 production signoff、protocol compliance 或 silicon claim |
-
-## Project AT-2：Multi-Initiator AT Arbitration and Contention Lab
-
-Project AT-2 在 Project AT-1 的 approximately-timed non-blocking transport 基础上，
-新增一个独立 AT demo。它用 `cpu0`、`dma0`、`accel0` 三个 synthetic initiator
-共享一个 simple AT interconnect / memory target，通过 `round_robin`、
-`fixed_priority`、`weighted_priority` 三类 arbitration policy 比较 request latency、
-p95 / p99 tail latency、initiator-level fairness、back-pressure 和 aggregate throughput。
-
-运行命令：
-
-```bash
-cmake -S examples/at -B build-at2 \
-  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
-  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
-cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
-
-python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
-  --build-dir build-at2
-```
-
-关键输出：
-
-```text
-examples/at/results/project_at2_multi_initiator_arbitration/model_runs/<case_name>/trace.csv
-examples/at/results/project_at2_multi_initiator_arbitration/project_at2_summary.csv
-examples/at/results/project_at2_multi_initiator_arbitration/project_at2_policy_summary.csv
-examples/at/results/project_at2_multi_initiator_arbitration/project_at2_report.md
-```
-
-Project AT-2 是教学性、架构探索性的 SystemC/TLM AT lab。它展示多 initiator
-contention、arbitration policy、queueing pressure、fairness / tail latency tradeoff
-和 back-pressure，但不声称 AXI / CHI protocol compliance，不声称 cycle accuracy，
-不声称真实 NoC、真实 DRAM timing、silicon validation 或 production signoff。
-
-## Project AT-3：QoS Sensitivity and SLA Violation Lab
-
-Project AT-3 在 Project AT-2 的 multi-initiator arbitration / contention 基础上，
-新增一个独立 AT demo。它用 `cpu0`、`dma0`、`accel0` 三类 synthetic traffic 扫描
-QoS-like weight、queue depth、target service latency 和 burstiness，观察 p95 / p99
-latency、fairness、throughput、back-pressure 和 SLA violation rate。
-
-运行命令：
-
-```bash
-cmake -S examples/at -B build-at3 \
-  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
-  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
-cmake --build build-at3 --target project_at3_qos_sensitivity_sla -j
-
-python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
-  --build-dir build-at3
-```
-
-关键输出：
-
-```text
-examples/at/results/project_at3_qos_sensitivity_sla/model_runs/<case_name>/trace.csv
-examples/at/results/project_at3_qos_sensitivity_sla/project_at3_summary.csv
-examples/at/results/project_at3_qos_sensitivity_sla/project_at3_policy_sweep.csv
-examples/at/results/project_at3_qos_sensitivity_sla/project_at3_recommendations.csv
-examples/at/results/project_at3_qos_sensitivity_sla/project_at3_report.md
-```
-
-Project AT-3 的 claim 边界是 bounded SoC architecture exploration。它展示
-QoS-like weighted arbitration、SLA violation detection、traffic-class protection、
-fairness vs tail-latency tradeoff 和 architecture recommendation，但不声称 AXI / CHI
-QoS compliance，不声称 cycle-accurate interconnect、真实 NoC、cache coherence、
-silicon validation 或 production signoff。
-
-## Project D：Standalone C++ Trace Replay Engine
-
-Project D 已在 Ubuntu 验证通过。它是一个 standalone C++ trace replay engine，输入
-Project B / Project C 的 normalized trace CSV，输出 `trace.csv` 和 `summary.csv`。
-Python 仍然负责 orchestration、Python vs C++ metrics equivalence check，以及
-`comparison.md` 生成。
-
-验证命令：
-
-```bash
-cmake -S examples/lt/replay_cpp -B build/examples/lt/replay_cpp
-cmake --build build/examples/lt/replay_cpp -j"$(nproc)"
-
-python3 examples/lt/tools/demo_cpp_trace_replay_lab.py
-```
-
-已验证输出：
-
-```text
-[replay-cpp] Project D standalone C++ trace replay PASS
-[compare] Python vs C++ replay summary equivalence PASS
-[demo-cpp] Project D Standalone C++ Trace Replay MVP PASS
-```
-
-Project D 不接 SystemC kernel，不做 gem5 live co-simulation，也不声称 cycle accuracy。
-
-## Project E：Banked Memory Controller Queueing Model
-
-Project E 是新增的 standalone C++ memory subsystem abstraction。它复用 normalized
-trace CSV 输入，把模型升级为 banked memory controller + queueing model，支持
-`bank_count`、`queue_depth`、per-bank `busy_until_ns`、address-to-bank mapping、
-row-buffer hit/miss、queue occupancy、tail latency、bank utilization、row hit ratio、
-throughput 和 queue full reject 统计。
-
-Python 只负责 demo orchestration、生成 demo input traces，以及从 C++ `summary.csv`
-生成 `comparison.md`。
-
-验证命令：
-
-```bash
-cmake -S examples/lt/banked_memory_controller_cpp \
-  -B build/examples/lt/banked_memory_controller_cpp
-cmake --build build/examples/lt/banked_memory_controller_cpp
-
-python3 examples/lt/tools/demo_banked_memory_controller_lab.py
-```
-
-默认输出：
-
-```text
-examples/lt/results/project_e_banked_memory_controller/trace.csv
-examples/lt/results/project_e_banked_memory_controller/summary.csv
-examples/lt/results/project_e_banked_memory_controller/comparison.md
-```
-
-详细说明见
-[`docs/project_e_banked_memory_controller_report.md`](docs/project_e_banked_memory_controller_report.md)。
-
-Project E 第一版不接 SystemC kernel，不做 gem5 live co-simulation，不做 JEDEC DRAM
-timing，不实现 AXI、CHI 或 NoC protocol，也不声称 cycle accuracy。
-
-## Project F：gem5 Stats Trend Correlation Report
-
-Project F compares gem5 SE `stats.txt` with replay summaries at trend level and
-documents model boundaries. 它生成 `correlation_summary.csv` 和
-`correlation_report.md`，用于解释 `sequential` vs `stride` 的趋势是否一致。
-
-运行命令：
-
-```bash
-python3 examples/lt/tools/demo_gem5_stats_correlation_lab.py
-```
-
-默认输出：
-
-```text
-examples/lt/results/project_f_gem5_stats_correlation/correlation_summary.csv
-examples/lt/results/project_f_gem5_stats_correlation/correlation_report.md
-```
-
-详细说明见
-[`docs/project_f_gem5_stats_correlation_report.md`](docs/project_f_gem5_stats_correlation_report.md)。
-
-Project F 不做 gem5 live co-simulation，不声称 cycle accuracy，不声称 RTL / silicon /
-profiler correlation。Project B / C normalized trace 中的 `timestamp_ns` 仍然只是
-normalized issue-time / ordering hint，不是 gem5 timing。
-
-## Project K：Workload-Aware Bottleneck Characterization
-
-Project K 用三类 core synthetic workload traces（`streaming`、`stride`、`hot_bank`）和两类
-optional synthetic access-pattern-inspired traces（`tiled_gemm_like`、
-`attention_like_blocked`）复用 Project E simplified banked memory model，把 access
-pattern 转成 trace-derived features、model-derived metrics、bottleneck attribution、
-mapping sensitivity sweep 和 bounded recommendation。
-
-运行命令：
-
-```bash
-python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
-```
-
-关键输出：
-
-```text
-examples/lt/results/project_k_workload_bottleneck/project_k_workload_bottleneck_summary.csv
-examples/lt/results/project_k_workload_bottleneck/project_k_what_if_sweep_summary.csv
-examples/lt/results/project_k_workload_bottleneck/project_k_report.md
-```
-
-Project K 只支持 synthetic trace 上的趋势级 bottleneck attribution，不声称真实 GPU
-性能、真实 GEMM / attention / FlashAttention / LLM kernel performance、PMU / perf /
-Nsight correlation、silicon validation 或 AXI / CHI protocol compliance。
-当前 hard gate：`total_workloads=5`、`sweep_rows=45`、`schema_version=k0.2`。
-
-## Project L：Evidence-Driven Memory Architecture Recommendation Lab
-
-Project L converts Project K bottleneck evidence into bounded memory architecture
-recommendations, such as bank parallelism, address mapping, locality improvement,
-queueing reduction, or service-latency reduction.
-
-它不修改底层 SystemC/TLM 或 Project E 模型，只读取 Project K 的 workload metrics、
-bank conflict proxy、queue delay、service delay、mapping sensitivity 和 bank-count
-sensitivity，把这些证据转换为可审计的 architecture decision-support hypotheses。
-
-新增输出：
-
-```text
-examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv
-examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendation_report.md
-```
-
-当前 hard gate：`recommendation_rows=5`、`schema_version=l0.1`、
-`claim_boundary=PASS`。
-
-## 为什么有价值
-
-LT 主线展示的是架构级性能分析工作流：workload knobs、transaction trace
-instrumentation、延迟分解、workload sweep 和自动生成的 comparison report。
-
-AT 主线展示的是 TLM-2.0 base protocol phase 的 timing observability，包括
-`BEGIN_REQ`、`END_REQ`、`BEGIN_RESP` 和 `END_RESP`。它也展示了一个小型 arbitration
-policy knob 如何改变 request-accept latency。
-
-这两个实验室合在一起，形成一条从架构级工作流到 AT timing refinement 的演进
-路径，但不声称 protocol completeness 或 cycle accuracy。
-
-Project G/H/I/J 在这条主线之后增加 validation evidence discipline：先定义 claim
-taxonomy，再用 local Verilator RTL reference 做 bounded block-level comparison，预留
-profiler / counter ingest interface，最后用 evidence packet 汇总哪些 claim 有证据、哪些
-claim 仍然 unsupported。
-
-## 快速开始
-
-从仓库根目录构建 AT lab：
-
-```bash
-cmake -S examples/at -B build/examples/at
-cmake --build build/examples/at
-```
-
-如果默认搜索路径找不到 SystemC，可以显式传入 SystemC 路径：
-
-```bash
-cmake -S examples/at -B build/examples/at \
-  -DUSER_SYSTEMC_LIB_DIR=<absolute path to SystemC lib> \
-  -DUSER_SYSTEMC_INCLUDE_DIR=<absolute path to SystemC include>
-cmake --build build/examples/at
-```
-
-运行 AT one-command demo：
-
-```bash
-python3 examples/at/tools/demo_at_lab.py \
-  --binary ./build/examples/at/at
-```
-
-运行 Project AT-1 four-phase memory timing demo：
-
-```bash
-python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
-```
-
-运行 Project AT-2 multi-initiator arbitration demo：
-
-```bash
-cmake -S examples/at -B build-at2 \
-  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
-  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
-cmake --build build-at2 --target project_at2_multi_initiator_arbitration -j
-python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
-  --build-dir build-at2
-```
-
-运行 Project AT-3 QoS sensitivity and SLA violation demo：
-
-```bash
-cmake -S examples/at -B build-at3 \
-  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
-  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
-cmake --build build-at3 --target project_at3_qos_sensitivity_sla -j
-python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
-  --build-dir build-at3
-```
-
-运行 LT one-command demo：
+每个 supported claim 都应该绑定 workload assumption、metric definition、evidence source
+和明确的 unsupported boundary。
+
+## 关键结果快照
+
+下面是已审查的实验快照，不是 hardware timing claim。
+
+| Area | Scenario | Result |
+| --- | --- | --- |
+| LT | `stride=4` 到 `stride=16` | `bank_conflict_ratio_pct` 从 `46.875%` 上升到 `98.438%`；`avg_delay_ns` 从 `164.688 ns` 上升到 `185.312 ns` |
+| LT Phase 16A | `sequential` / `stride` / `hotspot` | `stride bank_conflict_ratio_pct = 98.438%`，高于 `sequential` 和 `hotspot` |
+| LT Project B | `sample_sequential` / `sample_stride` | normalized trace replay 复现同类 bank-conflict signal：`sample_stride bank_conflict_ratio_pct = 98.438%` |
+| LT Project D | C++ replay vs Python replay | standalone C++ replay 输出 `trace.csv` / `summary.csv`，并通过 Python vs C++ replay summary equivalence |
+| LT Project E | `sequential_scan` / `stride_scan` / `hot_bank_stress` | `sequential_scan p99 = 60.000 ns`，`stride_scan p99 = 424.000 ns`，`hot_bank_stress p99 = 960.000 ns`，`stalled_or_rejected_transactions = 68` |
+| LT Project F | `sequential` vs `stride` | gem5 `stats.txt` 与 replay / Project E summaries 生成 qualitative trend-level report |
+| Project AT-1 | `sequential_moderate_gap` | `avg_request_accept_latency_ns = 1.000`，`backpressure_events = 0` |
+| Project AT-1 | `bursty_queue_pressure` | `avg_initiator_blocked_ns = 9.167`，`backpressure_events = 10` |
+| Project AT-1 | `hotspot_backpressure` | `avg_initiator_blocked_ns = 14.667`，`backpressure_events = 11` |
+| AT arbitration baseline | `fifo` | `complete_transactions = 4` |
+| AT arbitration baseline | `priority_101` | `101xxx avg = 1.000 ns`，`102xxx avg = 6.000 ns` |
+| AT arbitration baseline | `priority_102` | `102xxx avg = 1.000 ns`，`101xxx avg = 6.000 ns` |
+| Project K | workload bottleneck characterization | hard gate：`total_workloads=5`、`sweep_rows=45`、`schema_version=k0.2` |
+| Project L | recommendation layer | hard gate：`recommendation_rows=5`、`schema_version=l0.1`、`claim_boundary=PASS` |
+
+## 常用运行命令
+
+LT one-command demo：
 
 ```bash
 python3 examples/lt/tools/demo_performance_lab.py
 ```
 
-运行 headless regression harness：
+Project K workload bottleneck characterization：
+
+```bash
+python3 examples/lt/tools/demo_project_k_workload_bottleneck_lab.py
+```
+
+Project AT-1：
+
+```bash
+python3 examples/at/tools/demo_project_at1_four_phase_memory_timing.py
+```
+
+Project AT-2：
+
+```bash
+python3 examples/at/tools/demo_project_at2_multi_initiator_arbitration.py \
+  --build-dir build-at
+```
+
+Project AT-3：
+
+```bash
+python3 examples/at/tools/demo_project_at3_qos_sensitivity_sla.py \
+  --build-dir build-at
+```
+
+Headless regression harness：
 
 ```bash
 bash scripts/run_all_regressions.sh
 cat artifacts/regression_summary.md
 ```
 
-LT 的 Renode 配置、生成文件和结果解释见
-[`examples/lt/README_performance_lab.md`](examples/lt/README_performance_lab.md)。
-
-## G/H/I/J quick commands
-
-Project G 是文档路线图，快速检查：
-
-```bash
-test -f docs/project_g_golden_reference_correlation_plan.md
-test -f docs/accuracy_validation_taxonomy.md
-```
-
-Project H 需要本机或 Ubuntu 环境安装 Verilator：
+Project H 需要 Verilator-capable environment：
 
 ```bash
 python3 examples/lt/tools/demo_rtl_golden_model_lab.py
 ```
 
-手动 build/run Project H：
+如果没有 Verilator，Project H 应报告 prerequisite failure，而不是 end-to-end RTL PASS。
 
-```bash
-cmake -S examples/lt/rtl_banked_memory_controller \
-  -B build/examples/lt/rtl_banked_memory_controller
-cmake --build build/examples/lt/rtl_banked_memory_controller
+## Validation Ladder
 
-python3 examples/lt/tools/demo_rtl_golden_model_lab.py --no-build
-```
-
-如果没有 Verilator，Project H demo 应报告 prerequisite failure，而不是 correlation PASS。
-
-Project I sample-only profiler / counter interface smoke test：
-
-```bash
-python3 examples/lt/tools/demo_profiler_counter_correlation_lab.py
-```
-
-Project J evidence packet demo：
-
-```bash
-python3 examples/lt/tools/demo_accuracy_validation_packet.py
-```
-
-## 关键结果快照
-
-下面是已验证的实验快照，不是硬件 timing claim。
-
-| 实验室 | 场景 | 结果 |
-| --- | --- | --- |
-| LT | `stride=4` 到 `stride=16` | `bank_conflict_ratio_pct` 从 `46.875%` 上升到 `98.438%`；`avg_delay_ns` 从 `164.688 ns` 上升到 `185.312 ns` |
-| LT Phase 16A | `sequential` / `stride` / `hotspot` | `stride` 的 `bank_conflict_ratio_pct = 98.438%`，明显高于 `sequential` 和 `hotspot` |
-| LT Project B | `sample_sequential` / `sample_stride` | normalized trace replay 复现同类 bank conflict 观测：`sample_stride bank_conflict_ratio_pct = 98.438%` |
-| LT Project D | C++ replay vs Python replay | standalone C++ replay 输出 `trace.csv` / `summary.csv`，并通过 Python vs C++ replay summary equivalence check |
-| LT Project E | `sequential_scan` / `stride_scan` / `hot_bank_stress` | standalone C++ banked memory controller + queueing model：`sequential_scan p99 = 60.000 ns`，`stride_scan p99 = 424.000 ns`，`hot_bank_stress p99 = 960.000 ns` 且 `stalled_or_rejected_transactions = 68` |
-| LT Project F | `sequential` vs `stride` | gem5 `stats.txt` 与 replay / Project E summary 生成 qualitative trend-level report；不比较绝对 cycle，不声称 RTL / silicon / profiler correlation |
-| Project G | validation roadmap | 定义 golden-reference correlation path 和 Level 0 到 Level 4 validation taxonomy；不提供 observed error |
-| Project H | bounded RTL reference | local Verilator RTL banked memory controller reference path；只覆盖本仓库的 banked memory controller micro-model |
-| Project I | counter interface | sample-only counter schema、metadata join、normalization 和 report formatting；不是 hardware counter validation |
-| Project J | evidence packet | 把 claim、evidence source、reference、metric、error budget 和 status 收束到 validation packet；不是 silicon validation |
-| AT | `fifo` | `complete_transactions = 4` |
-| AT | `priority_101` | `101xxx` 更快被接受：`101xxx avg = 1.000 ns`，`102xxx avg = 6.000 ns` |
-| AT | `priority_102` | `102xxx` 更快被接受：`102xxx avg = 1.000 ns`，`101xxx avg = 6.000 ns` |
-| Project AT-1 | `sequential_moderate_gap` | `avg_request_accept_latency_ns = 1.000`，`backpressure_events = 0` |
-| Project AT-1 | `bursty_queue_pressure` | `avg_initiator_blocked_ns = 9.167`，`backpressure_events = 10` |
-| Project AT-1 | `hotspot_backpressure` | `avg_initiator_blocked_ns = 14.667`，`backpressure_events = 11` |
-
-## Validation Ladder / Evidence Chain
-
-Project G 把当前证据分成可升级的 validation ladder。每一级都必须绑定 workload、region、
-metric definition、reference source 和 error budget，不能只靠数字相似来扩大 claim。
-
-| Level | 当前项目中的含义 | 当前代表项目 | 可支持的说法 |
+| Level | 本仓库中的含义 | 代表项目 | 可支持的说法 |
 | --- | --- | --- | --- |
 | Level 0 Internal consistency | implementation consistency、schema stability、demo/regression health | Project D、Project I sample smoke、headless regression | replay / schema / report flow 可复现 |
-| Level 1 Trend correlation | selected workloads 下的方向性、ranking 或 qualitative trend | Project F | gem5 stats context 与 replay/model summary 在趋势层面可比较 |
-| Level 2 Quantitative correlation | aligned metric + reference + explicit error budget | Project H generated correlation rows, if available | local model-vs-RTL metric error 可计算 |
-| Level 3 Bounded golden reference validation | 有边界的 reference source 支撑特定 block、workload、metric claim | Project H | local banked memory controller Verilator RTL reference only |
-| Level 4 Enterprise production signoff | 企业级 release / signoff process | 当前不支持 | unsupported / out of scope |
+| Level 1 Trend correlation | selected workloads 下的 direction、ranking 或 qualitative trend | Project F | gem5 stats context 与 replay/model summaries 可以在趋势层面比较 |
+| Level 2 Quantitative correlation | aligned metric、reference 和 explicit error budget | Project H generated correlation rows, if available | local model-vs-RTL metric error 可计算 |
+| Level 3 Bounded golden reference validation | 针对 specific block、workload、metric 的 bounded reference source | Project H | 只支持 local banked-memory-controller Verilator RTL reference |
+| Level 4 Enterprise production signoff | enterprise release / signoff process | Not supported | unsupported / out of scope |
 
-当前 evidence chain 是：
-
-```text
-Project G taxonomy
--> Project H bounded local RTL reference path
--> Project I sample-only counter interface
--> Project J claim-bounded evidence packet
-```
-
-Project J 不新增 reference data，不补造缺失结果。它把已有 evidence source、metric、error
-budget 和 status 汇总为 evidence packet；如果 Project H / I generated results 缺失，应记录为
-`not_generated` 或 sample-only state，而不是把缺失数据写成验证通过。
-
-## What This Project Can Claim
-
-- 这是一个 SystemC/TLM architecture performance modeling lab，核心链路是
-  `workload -> trace -> metrics -> sweep -> comparison -> demo`。
-- LT lab 支持 architecture-level latency decomposition、workload sweep、normalized trace
-  replay、standalone C++ replay 和 banked memory controller queueing analysis。
-- AT lab 支持 TLM-2.0 base protocol phase trace 和 arbitration observability。
-- Project AT-1 支持 TLM-2.0 AT four-phase transaction timing、target queueing、
-  initiator stall / back-pressure 和 request/response phase timing observability。
-- Project D 支持 Python vs C++ replay summary equivalence。
-- Project E 支持 bounded standalone C++ memory subsystem queueing model analysis。
-- Project F 支持 selected workloads 下的 gem5 stats trend-level correlation report。
-- Project G 支持 golden-reference roadmap、accuracy validation taxonomy 和 claim-boundary
-  definition。
-- Project H 支持 local Verilator RTL reference path for banked memory controller only，并在
-  Verilator 环境和 generated correlation rows 存在时支持 bounded model-vs-RTL metric
-  comparison。
-- Project I 支持 sample-only profiler/counter ingestion interface、schema validation、
-  metadata join、normalization 和 report formatting。
-- Project J 支持 evidence packet，把 claim、evidence source、reference、metric、
-  error-budget state 和 support status 对齐记录。
-
-## What This Project Does Not Claim
-
-- 不声称 production signoff。
-- 不声称 silicon validation。
-- 不声称 full-system cycle accuracy。
-- 不声称 full SoC validation。
-- 不声称 AXI、CHI、NoC protocol compliance 或 production interconnect support。
-- 不声称真实 DRAM timing validation 或真实 product memory-controller validation。
-- 不声称 gem5-SystemC live co-simulation。
-- 不声称 full-system Linux timing validation。
-- 不把 Project H 的 local Verilator RTL banked memory controller reference 扩大成 full
-  SoC、silicon 或 production RTL validation。
-- 不把 Project I 的 sample synthetic counter data 说成 hardware counter validation。
-- 不把 Project J 的 evidence packet 说成 silicon validation、production release readiness
-  或 full-system accuracy proof。
+Project J 不补造缺失 reference data。它记录已有 evidence source、metric、
+error-budget state 和 support status；缺失的 generated results 保持 `not_generated` 或
+sample-only state。
 
 ## 路线图
 
-后续方向保持小步、可验证：
+后续方向保持小步、可度量、validation-oriented：
 
 - AT multi-target path。
 - AT response scheduling。
-- outstanding transaction depth。
-- 等价 workload 下的 LT vs AT 对比。
+- Outstanding transaction depth。
+- 等价 workloads 下的 LT-vs-AT comparison。
 
-这些都是未来方向，不是当前已完成能力。
+这些是 future directions，不是当前已完成能力。
 
-## 许可证和致谢
+## License And Notices
 
-部分 LT 示例基于 Renode-SystemC 集成基础，上游 notice 已按需要保留。
-详见 [`LICENSE`](LICENSE) 和 [`NOTICE`](NOTICE)。
+License 和 third-party notice 见 [`LICENSE`](LICENSE) 和 [`NOTICE`](NOTICE)。
