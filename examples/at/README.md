@@ -278,6 +278,59 @@ policy fidelity, not real inclusive/exclusive hierarchy behavior, not a real
 NoC model, not cycle-accurate timing, not silicon validation, and not production
 signoff.
 
+## Project AT-5：Memory System Backpressure and QoS Collapse Lab
+
+Project AT-5 adds an independent AT-level synthetic architecture lab in
+`examples/at/project_at5_backpressure_qos_collapse.cpp`. It models a bounded
+path:
+`initiators -> QoS arbiter -> ingress queue -> shared downstream service -> memory target`.
+
+本阶段关注的问题是：当 downstream memory service / shared resource 已经被打满时，
+priority policy 只能改变局部排队顺序，不能增加系统服务能力；因此 `cpu_rt`
+即使短期受益，`dma_bulk` 也可能被牺牲，而 latency-sensitive SLA 仍然无法满足。
+
+The model demonstrates:
+
+- `cpu_rt` latency-sensitive request stream
+- `dma_bulk` bandwidth-heavy streaming source
+- `accel_burst` bursty accelerator source
+- `round_robin`、`strict_priority`、`weighted_priority`、`throttled_dma`、
+  `backpressure_aware` 五种 synthetic QoS policy
+- bounded ingress/downstream queues, `queue_full_events`,
+  `backpressure_stall_ns`, `initiator_blocked_ns`
+- memory-service saturation, fairness / starvation proxy, SLA violation ratio,
+  collapse score, and bounded recommendation output
+
+Build and run Project AT-5 from the repository root:
+
+```bash
+cmake -S examples/at -B build-at \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+
+cmake --build build-at --target project_at5_backpressure_qos_collapse -j
+
+python3 examples/at/tools/demo_at5_backpressure_qos_collapse.py \
+  --at-build-dir build-at
+```
+
+It writes:
+
+- `examples/at/results/project_at5_backpressure_qos_collapse/model_runs/<case_name>/trace.csv`
+- `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_summary.csv`
+- `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_policy_sweep.csv`
+- `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_recommendations.csv`
+- `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_report.md`
+
+Project AT-5 is a bounded architecture-performance exploration model. Current:
+it supports synthetic trend comparison across queue capacity, downstream service
+latency, QoS policy, backpressure, fairness, and SLA collapse signals. Supported:
+relative comparisons inside the generated `at5.0` CSV contract. Not Supported:
+real NoC modeling, real AXI / CHI protocol compliance, real DRAM controller
+timing, real cache coherence, cycle-accurate timing, silicon validation, or
+production signoff. Future Work: integrate the generated evidence into the
+portfolio harness only after the standalone AT-5 contract is stable.
+
 ## Build and Run
 
 From the repository root:
