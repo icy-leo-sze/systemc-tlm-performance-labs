@@ -42,9 +42,15 @@ Project T documents Stage 1 as a completed portfolio phase and opens the bridge 
 
 ### Project AT-6: Heterogeneous SoC Shared Memory Fabric Lab
 
-Project AT-6 should build a synthetic AT-level lab where CPU-like, NPU-like, DMA-like, and ISP-like initiators share a memory fabric.
+Project AT-6 builds a synthetic AT-level lab where CPU-like, NPU-like, DMA-like, and ISP-like initiators share a memory fabric.
 
-It should observe:
+Status:
+
+```text
+independent lab implemented, not yet integrated into portfolio evidence harness
+```
+
+It observes:
 
 - mixed traffic interference
 - bandwidth partition
@@ -52,6 +58,10 @@ It should observe:
 - fabric contention
 - starvation risk
 - simple QoS / bandwidth cap policy
+
+Primary docs:
+
+- [`docs/project_at6_heterogeneous_soc_fabric.md`](project_at6_heterogeneous_soc_fabric.md)
 
 This is not Apple Silicon simulation. It is an Apple-like heterogeneous SoC problem type.
 
