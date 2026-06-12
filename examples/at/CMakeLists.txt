@@ -125,6 +125,24 @@ target_link_libraries(project_at6_heterogeneous_soc_fabric PRIVATE
     "${PROJECT_AT5_SYSTEMC_LIBRARY}"
 )
 
+add_executable(project_at7_gpu_like_throughput_saturation
+    project_at7_gpu_like_throughput_saturation.cpp
+)
+
+target_compile_features(project_at7_gpu_like_throughput_saturation PRIVATE cxx_std_17)
+
+if(DEFINED USER_SYSTEMC_INCLUDE_DIR)
+    target_include_directories(project_at7_gpu_like_throughput_saturation PRIVATE
+        ${USER_SYSTEMC_INCLUDE_DIR}
+    )
+endif()
+
+message(STATUS "Project AT-7 linking SystemC library: ${PROJECT_AT5_SYSTEMC_LIBRARY}")
+
+target_link_libraries(project_at7_gpu_like_throughput_saturation PRIVATE
+    "${PROJECT_AT5_SYSTEMC_LIBRARY}"
+)
+
 add_subdirectory(four_phase_memory_timing)
 add_subdirectory(multi_initiator_arbitration)
 add_subdirectory(qos_sensitivity_sla)
