@@ -11,10 +11,11 @@ bandwidth cap 的趋势。
 当前状态：
 
 ```text
-Status: independent lab implemented, not yet integrated into portfolio evidence harness
+Status: independent Stage 2 lab implemented and integrated into portfolio evidence harness
 ```
 
-Project U 才负责把 AT-6 集成到 portfolio evidence harness。
+Project U 将 AT-6 纳入 portfolio evidence harness，但 AT-6 仍然是 Stage 2
+independent lab，不是 Stage 1 内容。
 
 ## Model
 
@@ -65,6 +66,29 @@ Shared fabric 抽象包含：
   `isp_bandwidth_share`
 
 `bandwidth_share` 字段是本 synthetic run 内按 bytes 计算的百分比，不是硬件带宽测量。
+
+## Portfolio Evidence Integration
+
+Project U 后，portfolio evidence harness 会检查 AT-6 的以下内容：
+
+- `examples/at/results/project_at6_heterogeneous_soc_fabric/summary.csv` 存在。
+- `examples/at/results/project_at6_heterogeneous_soc_fabric/comparison.md` 存在。
+- `summary.csv` 覆盖 `baseline_rr`、`priority_latency`、`bandwidth_cap_npu`、
+  `dma_stress`、`mixed_stress` 五个 case。
+- `summary.csv` 保留 AT-6 的真实 metrics schema，包括 latency、throughput、
+  bandwidth share、queue peak、starvation events 和 SLA violation ratio。
+- `comparison.md` 保留 bounded claim boundary，明确 AT-6 remains a bounded
+  AT-level synthetic heterogeneous SoC shared-memory fabric exploration.
+
+Expected portfolio PASS marker:
+
+```text
+Portfolio Evidence Pack PASS
+stage1_projects=AT-1,AT-2,AT-3,AT-4,AT-5,K,L
+stage2_projects=AT-6
+claim_boundary=PASS
+schema_version=p0.3
+```
 
 ## Expected Interpretation
 

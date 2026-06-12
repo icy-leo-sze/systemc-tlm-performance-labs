@@ -2,8 +2,8 @@
 
 Generated from reproducible demo outputs.
 
-- schema_version: `p0.2`
-- generated_at_utc: `2026-06-12T01:39:44+00:00`
+- schema_version: `p0.3`
+- generated_at_utc: `2026-06-12T07:17:23+00:00`
 
 ## 1. Validation Scope
 
@@ -13,6 +13,7 @@ Generated from reproducible demo outputs.
 - Project AT-3: QoS-like sensitivity and SLA violation analysis
 - Project AT-4: cache-like shared-resource and MSHR pressure analysis
 - Project AT-5: memory-system backpressure and QoS collapse analysis
+- Project AT-6: heterogeneous SoC shared-memory fabric pressure analysis
 
 ## 2. Project K: LT Bottleneck Summary
 
@@ -179,7 +180,23 @@ Source: `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_r
 | throttled_dma_recovers_sla | dma_bulk_induced_backpressure | high | throttle_dma_bulk | high | throttled_dma | low | high | low | PASS |
 | bursty_accel_tail_spike | accel_burst_tail_spike | high | shape_accel_bursts | medium | throttled_dma | high | high | low | PASS |
 
-## 12. What This Evidence Pack Supports
+## 12. Project AT-6: Heterogeneous SoC Shared Memory Fabric Summary
+
+- Project AT-6 is the first Stage 2 lab in the portfolio evidence harness.
+- It covers a bounded AT-level synthetic heterogeneous SoC problem type: CPU-like, NPU-like, DMA-like, and ISP-like traffic sharing one memory fabric.
+- claim boundary: PASS means bounded AT-level synthetic architecture exploration only; it is not Apple Silicon simulation, real NoC behavior, cycle-accurate modeling, silicon validation, or production signoff.
+
+Source: `examples/at/results/project_at6_heterogeneous_soc_fabric/summary.csv`
+
+| case | total_transactions | p95_latency_ns | p99_latency_ns | fabric_queue_peak | starvation_events | cpu_p99_latency_ns | npu_throughput_txn_per_us | npu_bandwidth_share | dma_bandwidth_share |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline_rr | 228 | 3727.750 | 3989.080 | 57 | 181 | 2200.440 | 6.371 | 34.783 | 42.391 |
+| priority_latency | 228 | 5999.540 | 6357.320 | 46 | 103 | 76.100 | 6.371 | 34.783 | 42.391 |
+| bandwidth_cap_npu | 226 | 10466.782 | 11420.691 | 50 | 163 | 89.813 | 3.386 | 29.213 | 45.506 |
+| dma_stress | 252 | 10087.850 | 10529.850 | 124 | 231 | 5140.310 | 4.407 | 24.806 | 58.915 |
+| mixed_stress | 300 | 16429.700 | 17103.600 | 171 | 277 | 115.425 | 4.416 | 34.743 | 48.338 |
+
+## 13. What This Evidence Pack Supports
 
 - workload bottleneck reasoning
 - evidence-driven memory architecture recommendation
@@ -189,8 +206,9 @@ Source: `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_r
 - SLA violation and recommendation discussion
 - locality, hit/miss trend, MSHR-like pressure, and shared-resource interference discussion
 - bounded queues, downstream saturation, backpressure propagation, and QoS collapse discussion
+- heterogeneous SoC shared-memory fabric pressure and bandwidth partitioning discussion
 - reproducible portfolio validation
 
-## 13. Claim Boundary
+## 14. Claim Boundary
 
-This evidence pack supports bounded architecture modeling discussion only. It does not claim AXI/CHI compliance, cycle accuracy, real NoC modeling, cache coherence modeling, silicon validation, production signoff, real DRAM timing, or real workload performance.
+This evidence pack supports bounded architecture modeling discussion only. It does not claim AXI/CHI compliance, cycle accuracy, real NoC modeling, cache coherence modeling, Apple Silicon simulation, silicon validation, production signoff, real DRAM timing, or real workload performance.

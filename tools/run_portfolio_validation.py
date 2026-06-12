@@ -11,17 +11,18 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
-SCHEMA_VERSION = "p0.2"
+SCHEMA_VERSION = "p0.3"
 
 
 @dataclass(frozen=True)
 class CsvOutputCheck:
     path: Path
     min_rows: int
-    claim_boundary: str
-    schema_version: str
+    claim_boundary: Optional[str]
+    schema_version: Optional[str]
     required_columns: Tuple[str, ...] = ()
     min_unique_values: Optional[Dict[str, int]] = None
+    required_values: Optional[Dict[str, Tuple[str, ...]]] = None
 
 
 @dataclass(frozen=True)
@@ -37,9 +38,12 @@ class ProjectCheck:
     command: List[str]
     pass_markers: List[str]
     project_labels: List[str]
+    stage: str = "stage1"
     build_command: Optional[List[str]] = None
     csv_outputs: Tuple[CsvOutputCheck, ...] = ()
     text_outputs: Tuple[TextOutputCheck, ...] = ()
+    executable_candidates: Tuple[Path, ...] = ()
+    executable_args: Tuple[str, ...] = ()
 
 
 def repo_root() -> Path:
@@ -66,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-at",
         action="store_true",
-        help="Skip Project AT-1/AT-2/AT-3/AT-4/AT-5 validation.",
+        help="Skip Project AT-1/AT-2/AT-3/AT-4/AT-5/AT-6 validation.",
     )
     parser.add_argument(
         "--dry-run",
@@ -321,6 +325,84 @@ def build_checks(args: argparse.Namespace) -> List[ProjectCheck]:
                         ),
                     ),
                 ),
+                ProjectCheck(
+                    name="Project AT-6",
+                    project_labels=["AT-6"],
+                    stage="stage2",
+                    build_command=cmake_build_command(
+                        args.at_build_dir,
+                        "project_at6_heterogeneous_soc_fabric",
+                    ),
+                    command=[],
+                    executable_candidates=(
+                        Path(args.at_build_dir)
+                        / "project_at6_heterogeneous_soc_fabric",
+                        Path(args.at_build_dir)
+                        / "examples/at/project_at6_heterogeneous_soc_fabric",
+                    ),
+                    executable_args=("--no-trace",),
+                    pass_markers=[
+                        "Project AT-6 PASS",
+                        "cases=5",
+                        "claim_boundary=PASS",
+                        "schema_version=at6.0",
+                    ],
+                    csv_outputs=(
+                        CsvOutputCheck(
+                            path=Path(
+                                "examples/at/results/"
+                                "project_at6_heterogeneous_soc_fabric/"
+                                "summary.csv"
+                            ),
+                            min_rows=5,
+                            claim_boundary=None,
+                            schema_version=None,
+                            required_columns=(
+                                "case",
+                                "total_transactions",
+                                "sim_time_ns",
+                                "avg_latency_ns",
+                                "p95_latency_ns",
+                                "p99_latency_ns",
+                                "fabric_queue_peak",
+                                "starvation_events",
+                                "cpu_p99_latency_ns",
+                                "npu_throughput_txn_per_us",
+                                "npu_bandwidth_share",
+                                "dma_bandwidth_share",
+                                "isp_p99_latency_ns",
+                                "isp_sla_violation_ratio",
+                            ),
+                            required_values={
+                                "case": (
+                                    "baseline_rr",
+                                    "priority_latency",
+                                    "bandwidth_cap_npu",
+                                    "dma_stress",
+                                    "mixed_stress",
+                                ),
+                            },
+                        ),
+                    ),
+                    text_outputs=(
+                        TextOutputCheck(
+                            path=Path(
+                                "examples/at/results/"
+                                "project_at6_heterogeneous_soc_fabric/"
+                                "comparison.md"
+                            ),
+                            required_fragments=(
+                                "bounded AT-level synthetic",
+                                "does not claim Apple Silicon simulation",
+                                "real NoC behavior",
+                                "cycle-accurate modeling",
+                                "silicon validation",
+                                "production signoff",
+                            ),
+                            case_sensitive=True,
+                        ),
+                    ),
+                ),
             ]
         )
 
@@ -366,6 +448,17 @@ def run_command(
     )
 
 
+def resolve_command(root: Path, check: ProjectCheck) -> Optional[List[str]]:
+    if not check.executable_candidates:
+        return check.command
+
+    for candidate in check.executable_candidates:
+        full_path = root / candidate
+        if full_path.exists():
+            return [str(candidate), *check.executable_args]
+    return None
+
+
 def validate_csv_output(root: Path, check: CsvOutputCheck) -> List[str]:
     full_path = root / check.path
     errors: List[str] = []
@@ -393,10 +486,13 @@ def validate_csv_output(root: Path, check: CsvOutputCheck) -> List[str]:
             f"found {len(rows)}"
         )
 
-    for column, expected in (
+    expected_columns = (
         ("claim_boundary", check.claim_boundary),
         ("schema_version", check.schema_version),
-    ):
+    )
+    for column, expected in expected_columns:
+        if expected is None:
+            continue
         bad_values = sorted(
             {
                 row.get(column, "")
@@ -422,6 +518,23 @@ def validate_csv_output(root: Path, check: CsvOutputCheck) -> List[str]:
                 errors.append(
                     f"{check.path}: expected at least {minimum} unique {column} "
                     f"values, found {len(unique_values)}"
+                )
+
+    if check.required_values:
+        for column, expected_values in check.required_values.items():
+            if column not in headers:
+                errors.append(
+                    f"{check.path}: missing required column for value check: {column}"
+                )
+                continue
+            actual_values = {row.get(column, "") for row in rows}
+            missing_values = [
+                value for value in expected_values if value not in actual_values
+            ]
+            if missing_values:
+                errors.append(
+                    f"{check.path}: column {column} missing required value(s): "
+                    f"{', '.join(missing_values)}"
                 )
 
     return errors
@@ -464,7 +577,14 @@ def run_check(root: Path, check: ProjectCheck) -> bool:
             print_failure_output(build_result)
             return False
 
-    result = run_command(root, check.command)
+    command = resolve_command(root, check)
+    if command is None:
+        print(f"[project-p] FAIL {check.name}: executable not found")
+        for candidate in check.executable_candidates:
+            print(f"  missing candidate: {candidate}")
+        return False
+
+    result = run_command(root, command)
 
     combined_output = result.stdout + result.stderr
     missing_markers = [
@@ -511,22 +631,34 @@ def main() -> int:
                     f"[project-p] DRY-RUN {check.name}: "
                     f"{format_command(check.build_command)}"
                 )
-            print(f"[project-p] DRY-RUN {check.name}: {format_command(check.command)}")
+            command = check.command
+            if check.executable_candidates:
+                candidate_text = " | ".join(
+                    str(candidate) for candidate in check.executable_candidates
+                )
+                command = [f"<first-existing:{candidate_text}>", *check.executable_args]
+            print(f"[project-p] DRY-RUN {check.name}: {format_command(command)}")
         print("Portfolio Evidence Pack DRY-RUN")
         print(f"schema_version={SCHEMA_VERSION}")
         return 0
 
-    passed_labels: List[str] = []
+    stage1_labels: List[str] = []
+    stage2_labels: List[str] = []
     for check in checks:
         if not run_check(root, check):
             print("Portfolio Evidence Pack FAIL")
             print(f"failed_project={check.name}")
             print(f"schema_version={SCHEMA_VERSION}")
             return 1
-        passed_labels.extend(check.project_labels)
+        if check.stage == "stage2":
+            stage2_labels.extend(check.project_labels)
+        else:
+            stage1_labels.extend(check.project_labels)
 
     print("Portfolio Evidence Pack PASS")
-    print(f"projects={','.join(passed_labels)}")
+    print(f"stage1_projects={','.join(stage1_labels)}")
+    print(f"stage2_projects={','.join(stage2_labels)}")
+    print(f"projects={','.join(stage1_labels + stage2_labels)}")
     print("claim_boundary=PASS")
     print(f"schema_version={SCHEMA_VERSION}")
     return 0

@@ -336,7 +336,11 @@ timing, real cache coherence, cycle-accurate timing, silicon validation, or
 production signoff. Portfolio integration: Project S includes AT-5 in the
 portfolio evidence harness through the named target
 `project_at5_backpressure_qos_collapse`, the `at5.0` CSV contract, generated
-report checks, and the portfolio-level `schema_version=p0.2` PASS marker.
+report checks, and the portfolio-level `schema_version=p0.3` PASS marker.
+
+Project U extends the portfolio evidence harness to Stage 2 by adding
+Project AT-6 checks for `summary.csv`, `comparison.md`, expected case coverage,
+and bounded claim-boundary wording.
 
 ## Build and Run
 
