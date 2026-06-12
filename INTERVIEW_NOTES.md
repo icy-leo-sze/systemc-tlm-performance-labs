@@ -76,6 +76,36 @@ This evidence pack demonstrates architecture modeling judgment and
 reproducibility. It does not claim protocol compliance, cycle accuracy, silicon
 validation, or production readiness.
 
+## Stage 1 Portfolio Story
+
+I built a bounded, reproducible SystemC/TLM architecture performance modeling
+portfolio focused on memory-system bottleneck isolation.
+
+It starts from LT workload characterization and moves through:
+
+- AT-level transaction timing
+- multi-initiator arbitration
+- QoS sensitivity
+- cache-like shared resource and MSHR pressure
+- backpressure-induced QoS collapse
+
+The value is not cycle accuracy. The value is early architecture reasoning:
+identifying whether the bottleneck comes from workload locality, arbitration,
+shared resource pressure, outstanding request limits, downstream service
+saturation, or queue backpressure.
+
+Priority policies can redistribute contention, but they cannot create downstream service capacity.
+
+## Stage 2 Interview Positioning
+
+Stage 2 extends the portfolio toward industry-inspired problem types:
+
+- heterogeneous SoC shared memory fabric
+- GPU-like throughput and memory saturation
+- AMBA-inspired NoC QoS and coherency-boundary exploration
+
+The models are not replicas of Apple, NVIDIA, or Arm internal systems. They are bounded synthetic AT-level labs designed to show trend comparison, bottleneck isolation, and architecture recommendation logic.
+
 ## 1. 60秒项目介绍
 
 这是一个 SystemC/TLM virtual platform performance modeling lab。我的目标不是做一个

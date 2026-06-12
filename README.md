@@ -16,6 +16,41 @@ workload pattern -> transaction model -> latency / throughput / fairness / SLA m
 它面向可审查的 architecture reasoning 和作品集表达，不是 production simulator，也不是
 protocol-complete model。
 
+## Current Status
+
+Current release: `v0.13`
+
+Stage 1 is complete. The portfolio now covers:
+
+```text
+LT -> AT timing -> arbitration -> QoS -> cache-like MSHR pressure -> backpressure QoS collapse -> portfolio validation
+```
+
+The current portfolio evidence harness validates:
+
+```text
+Portfolio Evidence Pack PASS
+projects=AT-1,AT-2,AT-3,AT-4,AT-5,K,L
+claim_boundary=PASS
+schema_version=p0.2
+```
+
+See:
+
+- [`docs/stage1_summary.md`](docs/stage1_summary.md)
+- [`docs/engineering_lessons.md`](docs/engineering_lessons.md)
+- [`docs/next_phase_roadmap.md`](docs/next_phase_roadmap.md)
+
+## Next Phase
+
+Stage 2 moves toward an industry-inspired architecture performance modeling roadmap:
+
+- heterogeneous SoC shared memory fabric
+- GPU-like throughput engine and memory saturation
+- AMBA-inspired NoC QoS and coherency-boundary exploration
+
+These are bounded AT-level synthetic models for architecture reasoning. They do not claim cycle accuracy, protocol compliance, silicon validation, or production signoff.
+
 ## 从这里开始
 
 | 读者目标 | 建议入口 | 为什么 |
