@@ -8,10 +8,10 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 
-SCHEMA_VERSION = "p0.1"
+SCHEMA_VERSION = "p0.2"
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,8 @@ class CsvOutputCheck:
     min_rows: int
     claim_boundary: str
     schema_version: str
+    required_columns: Tuple[str, ...] = ()
+    min_unique_values: Optional[Dict[str, int]] = None
 
 
 @dataclass(frozen=True)
@@ -51,7 +53,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--at-build-dir",
         default="build-at",
-        help="Existing AT CMake build directory. The harness does not configure or build it.",
+        help=(
+            "Existing AT CMake build directory. The harness uses named target "
+            "builds and does not configure it."
+        ),
     )
     parser.add_argument(
         "--skip-lt",
@@ -61,7 +66,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-at",
         action="store_true",
-        help="Skip Project AT-1/AT-2/AT-3/AT-4 validation.",
+        help="Skip Project AT-1/AT-2/AT-3/AT-4/AT-5 validation.",
     )
     parser.add_argument(
         "--dry-run",
@@ -208,6 +213,114 @@ def build_checks(args: argparse.Namespace) -> List[ProjectCheck]:
                         ),
                     ),
                 ),
+                ProjectCheck(
+                    name="Project AT-5",
+                    project_labels=["AT-5"],
+                    build_command=cmake_build_command(
+                        args.at_build_dir,
+                        "project_at5_backpressure_qos_collapse",
+                    ),
+                    command=[
+                        "python3",
+                        "-B",
+                        "examples/at/tools/demo_at5_backpressure_qos_collapse.py",
+                        "--at-build-dir",
+                        args.at_build_dir,
+                    ],
+                    pass_markers=[
+                        "Project AT-5 Memory System Backpressure and QoS Collapse Lab PASS",
+                        "cases=7",
+                        "initiators=3",
+                        "policies=5",
+                        "claim_boundary=PASS",
+                        "schema_version=at5.0",
+                    ],
+                    csv_outputs=(
+                        CsvOutputCheck(
+                            path=Path(
+                                "examples/at/results/"
+                                "project_at5_backpressure_qos_collapse/"
+                                "project_at5_summary.csv"
+                            ),
+                            min_rows=21,
+                            claim_boundary="PASS",
+                            schema_version="at5.0",
+                            required_columns=(
+                                "case_name",
+                                "initiator",
+                                "policy",
+                                "transactions",
+                                "sla_target_ns",
+                                "sla_violation_ratio",
+                                "avg_total_latency_ns",
+                                "p95_total_latency_ns",
+                                "p99_total_latency_ns",
+                                "throughput_txn_per_us",
+                                "ingress_queue_capacity",
+                                "downstream_queue_capacity",
+                                "queue_full_events",
+                                "backpressure_stall_ns",
+                                "initiator_blocked_ns",
+                                "memory_service_latency_ns",
+                                "service_utilization",
+                                "saturation_ratio",
+                                "fairness_index",
+                                "starvation_proxy",
+                                "collapse_score",
+                                "dominant_bottleneck",
+                                "claim_boundary",
+                                "schema_version",
+                            ),
+                            min_unique_values={
+                                "case_name": 7,
+                                "initiator": 3,
+                            },
+                        ),
+                        CsvOutputCheck(
+                            path=Path(
+                                "examples/at/results/"
+                                "project_at5_backpressure_qos_collapse/"
+                                "project_at5_policy_sweep.csv"
+                            ),
+                            min_rows=35,
+                            claim_boundary="PASS",
+                            schema_version="at5.0",
+                            required_columns=("recommended_action",),
+                            min_unique_values={"policy": 5},
+                        ),
+                        CsvOutputCheck(
+                            path=Path(
+                                "examples/at/results/"
+                                "project_at5_backpressure_qos_collapse/"
+                                "project_at5_recommendations.csv"
+                            ),
+                            min_rows=7,
+                            claim_boundary="PASS",
+                            schema_version="at5.0",
+                            required_columns=(
+                                "recommended_action",
+                                "primary_bottleneck",
+                                "confidence",
+                            ),
+                        ),
+                    ),
+                    text_outputs=(
+                        TextOutputCheck(
+                            path=Path(
+                                "examples/at/results/"
+                                "project_at5_backpressure_qos_collapse/"
+                                "project_at5_report.md"
+                            ),
+                            required_fragments=(
+                                "Claim boundary",
+                                "backpressure",
+                                "saturation",
+                                "collapse",
+                                "QoS alone",
+                            ),
+                        ),
+                    ),
+                ),
             ]
         )
 
@@ -262,7 +375,17 @@ def validate_csv_output(root: Path, check: CsvOutputCheck) -> List[str]:
 
     with full_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
+        headers = list(reader.fieldnames or [])
         rows = [dict(row) for row in reader]
+
+    missing_columns = [
+        column for column in check.required_columns if column not in headers
+    ]
+    if missing_columns:
+        errors.append(
+            f"{check.path}: missing required column(s): "
+            f"{', '.join(missing_columns)}"
+        )
 
     if len(rows) < check.min_rows:
         errors.append(
@@ -286,6 +409,20 @@ def validate_csv_output(root: Path, check: CsvOutputCheck) -> List[str]:
                 f"{check.path}: column {column} expected {expected}, "
                 f"found {bad_values}"
             )
+
+    if check.min_unique_values:
+        for column, minimum in check.min_unique_values.items():
+            if column not in headers:
+                errors.append(
+                    f"{check.path}: missing required column for unique check: {column}"
+                )
+                continue
+            unique_values = {row.get(column, "") for row in rows if row.get(column, "")}
+            if len(unique_values) < minimum:
+                errors.append(
+                    f"{check.path}: expected at least {minimum} unique {column} "
+                    f"values, found {len(unique_values)}"
+                )
 
     return errors
 
@@ -376,7 +513,7 @@ def main() -> int:
                 )
             print(f"[project-p] DRY-RUN {check.name}: {format_command(check.command)}")
         print("Portfolio Evidence Pack DRY-RUN")
-        print("schema_version=p0.1")
+        print(f"schema_version={SCHEMA_VERSION}")
         return 0
 
     passed_labels: List[str] = []

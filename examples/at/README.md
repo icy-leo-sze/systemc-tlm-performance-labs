@@ -289,6 +289,11 @@ path:
 priority policy 只能改变局部排队顺序，不能增加系统服务能力；因此 `cpu_rt`
 即使短期受益，`dma_bulk` 也可能被牺牲，而 latency-sensitive SLA 仍然无法满足。
 
+AT-5 connects the previous AT labs directly:
+AT-3 shows QoS can help latency-sensitive traffic.
+AT-4 shows shared resource and MSHR-like pressure.
+AT-5 shows QoS limits under downstream saturation and backpressure propagation.
+
 The model demonstrates:
 
 - `cpu_rt` latency-sensitive request stream
@@ -328,8 +333,10 @@ latency, QoS policy, backpressure, fairness, and SLA collapse signals. Supported
 relative comparisons inside the generated `at5.0` CSV contract. Not Supported:
 real NoC modeling, real AXI / CHI protocol compliance, real DRAM controller
 timing, real cache coherence, cycle-accurate timing, silicon validation, or
-production signoff. Future Work: integrate the generated evidence into the
-portfolio harness only after the standalone AT-5 contract is stable.
+production signoff. Portfolio integration: Project S includes AT-5 in the
+portfolio evidence harness through the named target
+`project_at5_backpressure_qos_collapse`, the `at5.0` CSV contract, generated
+report checks, and the portfolio-level `schema_version=p0.2` PASS marker.
 
 ## Build and Run
 
