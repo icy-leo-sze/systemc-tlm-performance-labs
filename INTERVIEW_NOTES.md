@@ -18,8 +18,9 @@ workload → trace → metrics → sweep → comparison → demo
 I built a SystemC/TLM performance modeling portfolio. It starts with LT
 bottleneck characterization and evolves into AT transaction timing, contention,
 QoS-like sensitivity, SLA violation analysis, cache-like MSHR pressure, and
-backpressure / QoS collapse analysis. The focus is early architecture reasoning
-before RTL, with explicit claim boundaries.
+backpressure / QoS collapse analysis, then extends into Stage 2 with a bounded
+heterogeneous SoC shared-memory fabric pressure lab. The focus is early
+architecture reasoning before RTL, with explicit claim boundaries.
 
 ### 90-second pitch
 
@@ -36,10 +37,12 @@ multi-initiator arbitration policies and looks at fairness, back-pressure, and
 p95 / p99 tail latency. AT-3 adds QoS-like weight sensitivity, queue-depth and
 service-latency sweeps, SLA violation detection, and bounded recommendation
 output. AT-4 adds cache-like shared-resource pressure, and AT-5 shows why QoS
-priority loses effectiveness when downstream service capacity is saturated. The
-value is not that the model is a production interconnect; the value is that each
-claim is tied to reproducible traces, summaries, reports, and an explicit
-boundary.
+priority loses effectiveness when downstream service capacity is saturated.
+Stage 2 starts with AT-6, which extends the portfolio from memory-system
+bottleneck isolation into heterogeneous SoC shared-memory fabric pressure across
+CPU-like, NPU-like, DMA-like, and ISP-like traffic. The value is not that the
+model is a production interconnect; the value is that each claim is tied to
+reproducible traces, summaries, reports, and an explicit boundary.
 
 ### Three interview bullets
 
@@ -64,7 +67,7 @@ tradeoffs reviewable and reproducible before RTL.
 
 ### Evidence bullets
 
-- Reproducible validation harness across K/L/AT-1/AT-2/AT-3/AT-4/AT-5.
+- Reproducible validation harness across Stage 1 K/L/AT-1/AT-2/AT-3/AT-4/AT-5 and Stage 2 AT-6.
 - Generated summary from CSV outputs, not hand-written claims.
 - Latency, throughput, fairness, back-pressure, and SLA metrics.
 - Explicit claim boundary.
@@ -105,6 +108,10 @@ Stage 2 extends the portfolio toward industry-inspired problem types:
 - AMBA-inspired NoC QoS and coherency-boundary exploration
 
 The models are not replicas of Apple, NVIDIA, or Arm internal systems. They are bounded synthetic AT-level labs designed to show trend comparison, bottleneck isolation, and architecture recommendation logic.
+
+AT-6 extends the portfolio from memory-system bottleneck isolation into
+heterogeneous SoC shared-memory fabric pressure. The evidence harness now checks
+both Stage 1 and Stage 2 labs while preserving claim boundaries.
 
 ## 1. 60秒项目介绍
 

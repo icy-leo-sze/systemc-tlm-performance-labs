@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 
-SCHEMA_VERSION = "p0.2"
+SCHEMA_VERSION = "p0.3"
 DEFAULT_OUTPUT = "docs/generated/portfolio_evidence_summary.md"
 
 
@@ -400,6 +400,45 @@ def specs() -> List[CsvSpec]:
                 ),
             ),
         ),
+        CsvSpec(
+            title="12. Project AT-6: Heterogeneous SoC Shared Memory Fabric Summary",
+            path=Path(
+                "examples/at/results/project_at6_heterogeneous_soc_fabric/"
+                "summary.csv"
+            ),
+            preferred_columns=(
+                "case",
+                "total_transactions",
+                "p95_latency_ns",
+                "p99_latency_ns",
+                "fabric_queue_peak",
+                "starvation_events",
+                "cpu_p99_latency_ns",
+                "npu_throughput_txn_per_us",
+                "npu_bandwidth_share",
+                "dma_bandwidth_share",
+            ),
+            reproduce_hint=(
+                "./build-at/project_at6_heterogeneous_soc_fabric --no-trace"
+            ),
+            context_lines=(
+                (
+                    "Project AT-6 is the first Stage 2 lab in the portfolio "
+                    "evidence harness."
+                ),
+                (
+                    "It covers a bounded AT-level synthetic heterogeneous SoC "
+                    "problem type: CPU-like, NPU-like, DMA-like, and ISP-like "
+                    "traffic sharing one memory fabric."
+                ),
+                (
+                    "claim boundary: PASS means bounded AT-level synthetic "
+                    "architecture exploration only; it is not Apple Silicon "
+                    "simulation, real NoC behavior, cycle-accurate modeling, "
+                    "silicon validation, or production signoff."
+                ),
+            ),
+        ),
     ]
 
 
@@ -454,6 +493,7 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
         "- Project AT-3: QoS-like sensitivity and SLA violation analysis",
         "- Project AT-4: cache-like shared-resource and MSHR pressure analysis",
         "- Project AT-5: memory-system backpressure and QoS collapse analysis",
+        "- Project AT-6: heterogeneous SoC shared-memory fabric pressure analysis",
         "",
     ]
 
@@ -466,7 +506,7 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
 
     lines.extend(
         [
-            "## 12. What This Evidence Pack Supports",
+            "## 13. What This Evidence Pack Supports",
             "",
             "- workload bottleneck reasoning",
             "- evidence-driven memory architecture recommendation",
@@ -476,15 +516,16 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
             "- SLA violation and recommendation discussion",
             "- locality, hit/miss trend, MSHR-like pressure, and shared-resource interference discussion",
             "- bounded queues, downstream saturation, backpressure propagation, and QoS collapse discussion",
+            "- heterogeneous SoC shared-memory fabric pressure and bandwidth partitioning discussion",
             "- reproducible portfolio validation",
             "",
-            "## 13. Claim Boundary",
+            "## 14. Claim Boundary",
             "",
             (
                 "This evidence pack supports bounded architecture modeling discussion only. "
                 "It does not claim AXI/CHI compliance, cycle accuracy, real NoC modeling, "
-                "cache coherence modeling, silicon validation, production signoff, real "
-                "DRAM timing, or real workload performance."
+                "cache coherence modeling, Apple Silicon simulation, silicon validation, "
+                "production signoff, real DRAM timing, or real workload performance."
             ),
             "",
         ]

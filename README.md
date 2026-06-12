@@ -18,7 +18,7 @@ protocol-complete model。
 
 ## Current Status
 
-Current release: `v0.13`
+Current release: `v0.15-at6-heterogeneous-soc-fabric`
 
 Stage 1 is complete. The portfolio now covers:
 
@@ -30,10 +30,13 @@ The current portfolio evidence harness validates:
 
 ```text
 Portfolio Evidence Pack PASS
-projects=AT-1,AT-2,AT-3,AT-4,AT-5,K,L
+stage1_projects=AT-1,AT-2,AT-3,AT-4,AT-5,K,L
+stage2_projects=AT-6
 claim_boundary=PASS
-schema_version=p0.2
+schema_version=p0.3
 ```
+
+AT-6 is now part of the portfolio evidence harness as the first Stage 2 lab.
 
 See:
 
@@ -57,7 +60,7 @@ These are bounded AT-level synthetic models for architecture reasoning. They do 
 | --- | --- | --- |
 | 理解整体架构叙事 | [`docs/portfolio_architecture_story.md`](docs/portfolio_architecture_story.md) | 把 LT 和 AT labs 串成一条作品集主线 |
 | 审查可复现证据 | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md) | 解释 validation flow 和 generated artifacts |
-| 查看指标摘要 | [`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md) | 汇总 K/L/AT-1/AT-2/AT-3/AT-4/AT-5 的 CSV outputs |
+| 查看指标摘要 | [`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md) | 汇总 K/L/AT-1/AT-2/AT-3/AT-4/AT-5/AT-6 的 CSV outputs |
 | 准备面试讨论 | [`INTERVIEW_NOTES.md`](INTERVIEW_NOTES.md) | 提供作品集 pitch 和 bounded claim language |
 | 运行 portfolio validation | [`tools/run_portfolio_validation.py`](tools/run_portfolio_validation.py) | 检查主线项目的 PASS markers |
 
@@ -71,6 +74,7 @@ These are bounded AT-level synthetic models for architecture reasoning. They do 
 - 隔离 locality、MSHR-like pressure、shared-resource interference 和 memory-service bottleneck。
 - 展示 downstream saturation 下 backpressure propagation 和 QoS collapse。
 - AT-5 demonstrates that priority policies can redistribute contention but cannot create downstream service capacity.
+- 把 Stage 2 AT-6 纳入 evidence harness，用 heterogeneous SoC shared-memory fabric pressure 观察 mixed traffic interference、bandwidth partitioning 和 starvation risk。
 - 通过 validation harness 和 generated summary 形成可复现 evidence packaging。
 - 展示 architecture judgment：知道模型能支持什么，也知道模型不能支持什么。
 
@@ -86,6 +90,7 @@ These are bounded AT-level synthetic models for architecture reasoning. They do 
 | 6 | Project AT-4 | AT | locality、MSHR-like pressure、shared interference 和 memory service bottleneck 如何相互作用？ | policy sweep / recommendations |
 | 7 | Project AT-5 | AT | downstream saturation 和 bounded queues 何时让 QoS policy 失效？ | policy sweep / recommendations |
 | 8 | Project P / S | Portfolio Evidence | 整条建模主线是否可审查、可复现？ | validation harness / generated evidence summary |
+| Stage 2 | Project AT-6 | AT | heterogeneous SoC shared-memory fabric pressure 如何影响 latency-sensitive 和 throughput-oriented traffic？ | summary / comparison / portfolio harness checks |
 
 ## 快速验证
 
@@ -96,6 +101,7 @@ python3 tools/run_portfolio_validation.py --at-build-dir build-at
 
 第二条 AT validation command 假设 `build-at` 已经完成 configure；harness 会使用
 明确的 named project targets 构建 AT-1/2/3/4/5，不依赖 legacy aggregate `at` target。
+Project U 后，harness 也构建并检查 Stage 2 `project_at6_heterogeneous_soc_fabric`。
 
 ## AT 构建参考
 
@@ -110,6 +116,7 @@ cmake --build build-at --target project_at2_multi_initiator_arbitration -j
 cmake --build build-at --target project_at3_qos_sensitivity_sla -j
 cmake --build build-at --target project_at4_cache_mshr_pressure -j
 cmake --build build-at --target project_at5_backpressure_qos_collapse -j
+cmake --build build-at --target project_at6_heterogeneous_soc_fabric -j
 ```
 
 ## Claim Boundary
@@ -150,6 +157,7 @@ cmake --build build-at --target project_at5_backpressure_qos_collapse -j
 | Project AT-3 | QoS sensitivity and SLA violation analysis | `examples/at/qos_sensitivity_sla/`、`project_at3_policy_sweep.csv`、`project_at3_recommendations.csv`、`project_at3_report.md` | 分析 QoS-like weighted arbitration sensitivity、SLA violation rate、queue depth / service latency sensitivity 和 bounded recommendation |
 | Project AT-4 | Cache-like Shared Resource and MSHR Pressure Lab | `examples/at/project_at4_cache_mshr_pressure.cpp`、`project_at4_summary.csv`、`project_at4_policy_sweep.csv`、`project_at4_recommendations.csv`、`project_at4_report.md` | Models locality, MSHR-like pressure, shared-resource interference, and diminishing returns at AT-level without claiming real cache coherence or cycle accuracy. |
 | Project AT-5 | Memory System Backpressure and QoS Collapse Lab | `examples/at/project_at5_backpressure_qos_collapse.cpp`、`project_at5_summary.csv`、`project_at5_policy_sweep.csv`、`project_at5_recommendations.csv`、`project_at5_report.md` | 分析 bounded queues、downstream saturation、backpressure propagation 和 QoS collapse；不是 real NoC、AXI/CHI、DRAM controller 或 cycle-accurate model |
+| Project AT-6 | Heterogeneous SoC Shared Memory Fabric Lab | `examples/at/project_at6_heterogeneous_soc_fabric.cpp`、`summary.csv`、`comparison.md` | Stage 2 independent lab；分析 bounded AT-level synthetic heterogeneous SoC shared-memory fabric pressure、bandwidth cap、latency-sensitive flow protection 和 starvation risk；不是 Apple Silicon simulation、real NoC behavior、cycle-accurate modeling、silicon validation 或 production signoff |
 | Project B / C | Normalized trace replay 和 gem5 SE-derived trace replay | normalized trace inputs、`summary.csv`、`comparison.md` | gem5 SE 只作为 offline trace context；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
 | Project D | Standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metric equivalence；不接 SystemC kernel，不做 live co-simulation |
 | Project E | Standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | 用于 queueing 和 bank conflict reasoning 的 memory subsystem abstraction |
@@ -160,7 +168,7 @@ cmake --build build-at --target project_at5_backpressure_qos_collapse -j
 | Project J | Accuracy validation evidence packet | [`docs/project_j_accuracy_validation_report.md`](docs/project_j_accuracy_validation_report.md)、`demo_accuracy_validation_packet.py` | claim-bounded evidence packet，显式记录 support status 和 missing evidence |
 | Project K | Workload-aware memory bottleneck characterization | [`docs/project_k_workload_aware_memory_bottleneck_report.md`](docs/project_k_workload_aware_memory_bottleneck_report.md)、`demo_project_k_workload_bottleneck_lab.py` | synthetic trace + simplified banked model 的 trend-level bottleneck attribution |
 | Project L | Evidence-driven memory architecture recommendation | `examples/lt/results/project_l_memory_architecture_recommendation/project_l_recommendations.csv`、`project_l_recommendation_report.md` | 基于 Project K evidence 的 bounded recommendation layer |
-| Project P / S | Portfolio evidence pack and validation harness | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md)、[`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md)、`tools/run_portfolio_validation.py` | 对 K/L/AT-1/AT-2/AT-3/AT-4/AT-5 做 portfolio-level evidence packaging 和 PASS-marker validation |
+| Project P / S / U | Portfolio evidence pack and validation harness | [`docs/portfolio_evidence_pack.md`](docs/portfolio_evidence_pack.md)、[`docs/generated/portfolio_evidence_summary.md`](docs/generated/portfolio_evidence_summary.md)、`tools/run_portfolio_validation.py` | 对 Stage 1 K/L/AT-1/AT-2/AT-3/AT-4/AT-5 和 Stage 2 AT-6 做 portfolio-level evidence packaging 和 PASS-marker validation |
 
 ## Evidence Chain
 

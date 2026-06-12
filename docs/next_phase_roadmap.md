@@ -47,7 +47,7 @@ Project AT-6 builds a synthetic AT-level lab where CPU-like, NPU-like, DMA-like,
 Status:
 
 ```text
-independent lab implemented, not yet integrated into portfolio evidence harness
+independent lab implemented and integrated into portfolio evidence harness
 ```
 
 It observes:
@@ -67,7 +67,7 @@ This is not Apple Silicon simulation. It is an Apple-like heterogeneous SoC prob
 
 ### Project U: Integrate AT-6 into Evidence Harness
 
-Project U should add AT-6 to the portfolio evidence pack with clear PASS markers, result artifacts, summary checks, and claim-boundary validation.
+Project U is implemented: AT-6 is integrated into the portfolio evidence harness with clear PASS markers, result artifact checks, summary case coverage checks, and claim-boundary validation.
 
 ### Project AT-7: GPU-like Throughput Engine and Memory Saturation Lab
 
