@@ -107,6 +107,24 @@ target_link_libraries(project_at5_backpressure_qos_collapse PRIVATE
     "${PROJECT_AT5_SYSTEMC_LIBRARY}"
 )
 
+add_executable(project_at6_heterogeneous_soc_fabric
+    project_at6_heterogeneous_soc_fabric.cpp
+)
+
+target_compile_features(project_at6_heterogeneous_soc_fabric PRIVATE cxx_std_17)
+
+if(DEFINED USER_SYSTEMC_INCLUDE_DIR)
+    target_include_directories(project_at6_heterogeneous_soc_fabric PRIVATE
+        ${USER_SYSTEMC_INCLUDE_DIR}
+    )
+endif()
+
+message(STATUS "Project AT-6 linking SystemC library: ${PROJECT_AT5_SYSTEMC_LIBRARY}")
+
+target_link_libraries(project_at6_heterogeneous_soc_fabric PRIVATE
+    "${PROJECT_AT5_SYSTEMC_LIBRARY}"
+)
+
 add_subdirectory(four_phase_memory_timing)
 add_subdirectory(multi_initiator_arbitration)
 add_subdirectory(qos_sensitivity_sla)
