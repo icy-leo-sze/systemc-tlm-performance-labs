@@ -2,8 +2,8 @@
 
 Generated from reproducible demo outputs.
 
-- schema_version: `p0.1`
-- generated_at_utc: `2026-06-11T08:43:11+00:00`
+- schema_version: `p0.2`
+- generated_at_utc: `2026-06-12T01:39:44+00:00`
 
 ## 1. Validation Scope
 
@@ -12,6 +12,7 @@ Generated from reproducible demo outputs.
 - Project AT-2: multi-initiator arbitration and contention
 - Project AT-3: QoS-like sensitivity and SLA violation analysis
 - Project AT-4: cache-like shared-resource and MSHR pressure analysis
+- Project AT-5: memory-system backpressure and QoS collapse analysis
 
 ## 2. Project K: LT Bottleneck Summary
 
@@ -116,7 +117,69 @@ Source: `examples/at/results/project_at4_cache_mshr_pressure/project_at4_recomme
 | high_mshr_diminishing_return | diminishing_mshr_return | no_single_dominant_action | medium | dominant=diminishing_mshr_return; p99=377.603ns; mshr_full_events=64; pollution=0.815 | 0.324 | 0.713 | 0.680 | 0.815 | PASS |
 | slow_memory_mshr_saturation | memory_service_latency | reduce_memory_service_latency | high | dominant=memory_service_latency; p99=964.215ns; mshr_full_events=61; pollution=0.715 | 0.361 | 0.685 | 0.740 | 0.715 | PASS |
 
-## 10. What This Evidence Pack Supports
+## 10. Project AT-5: Backpressure / QoS Collapse Summary
+
+- Project AT-5 covers bounded queues and downstream saturation: `cpu_rt`, `dma_bulk`, and `accel_burst` contend for a shared downstream service under 5 synthetic QoS policies.
+- It highlights backpressure propagation and QoS collapse: QoS alone can redistribute contention but cannot create downstream service capacity.
+- PASS marker: `Project AT-5 Memory System Backpressure and QoS Collapse Lab PASS`; claim boundary remains bounded AT-level trend comparison only.
+
+Source: `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_policy_sweep.csv`
+
+| case_name | policy | cpu_rt_p95_ns | cpu_rt_sla_violation_ratio | system_throughput_txn_per_us | service_utilization | queue_full_events | backpressure_stall_ns | collapse_score | claim_boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline_balanced_rr | round_robin | 41.380 | 0.000 | 17.227 | 0.397 | 0 | 391.100 | 0.012 | PASS |
+| baseline_balanced_rr | strict_priority | 26.080 | 0.000 | 17.225 | 0.397 | 0 | 1352.590 | 0.027 | PASS |
+| baseline_balanced_rr | weighted_priority | 34.580 | 0.000 | 16.490 | 0.380 | 0 | 415.820 | 0.012 | PASS |
+| baseline_balanced_rr | throttled_dma | 30.820 | 0.000 | 8.458 | 0.195 | 0 | 206.800 | 0.021 | PASS |
+| baseline_balanced_rr | backpressure_aware | 30.659 | 0.000 | 13.139 | 0.299 | 0 | 315.150 | 0.015 | PASS |
+| strict_priority_helps_cpu | round_robin | 499.144 | 0.056 | 31.701 | 0.832 | 78 | 26922.876 | 0.315 | PASS |
+| strict_priority_helps_cpu | strict_priority | 489.520 | 0.028 | 31.696 | 0.832 | 76 | 26759.016 | 0.301 | PASS |
+| strict_priority_helps_cpu | weighted_priority | 409.308 | 0.000 | 30.300 | 0.796 | 70 | 21196.496 | 0.251 | PASS |
+| strict_priority_helps_cpu | throttled_dma | 57.168 | 0.000 | 26.035 | 0.684 | 0 | 1418.952 | 0.033 | PASS |
+| strict_priority_helps_cpu | backpressure_aware | 56.385 | 0.000 | 24.984 | 0.647 | 0 | 1564.945 | 0.034 | PASS |
+| strict_priority_starves_dma | round_robin | 310.400 | 0.000 | 35.801 | 0.657 | 63 | 12900.400 | 0.191 | PASS |
+| strict_priority_starves_dma | strict_priority | 272.240 | 0.000 | 35.795 | 0.657 | 60 | 12839.760 | 0.184 | PASS |
+| strict_priority_starves_dma | weighted_priority | 231.420 | 0.000 | 34.213 | 0.628 | 56 | 9848.100 | 0.175 | PASS |
+| strict_priority_starves_dma | throttled_dma | 25.580 | 0.000 | 35.801 | 0.657 | 0 | 937.560 | 0.026 | PASS |
+| strict_priority_starves_dma | backpressure_aware | 39.741 | 0.000 | 28.087 | 0.509 | 0 | 1122.735 | 0.039 | PASS |
+| downstream_saturation_qos_collapse | round_robin | 15120.829 | 0.972 | 6.644 | 1.000 | 105 | 852466.826 | 0.806 | PASS |
+| downstream_saturation_qos_collapse | strict_priority | 14812.257 | 0.944 | 6.644 | 1.000 | 105 | 849768.687 | 0.796 | PASS |
+| downstream_saturation_qos_collapse | weighted_priority | 14812.257 | 0.972 | 6.644 | 1.000 | 105 | 849696.043 | 0.805 | PASS |
+| downstream_saturation_qos_collapse | throttled_dma | 12189.400 | 0.972 | 6.644 | 1.000 | 105 | 838003.114 | 0.805 | PASS |
+| downstream_saturation_qos_collapse | backpressure_aware | 11887.200 | 0.944 | 6.736 | 1.000 | 105 | 826704.538 | 0.796 | PASS |
+| small_queue_backpressure | round_robin | 109.540 | 0.000 | 42.495 | 0.750 | 63 | 3779.940 | 0.187 | PASS |
+| small_queue_backpressure | strict_priority | 92.380 | 0.000 | 42.495 | 0.750 | 58 | 4582.140 | 0.181 | PASS |
+| small_queue_backpressure | weighted_priority | 92.380 | 0.000 | 41.549 | 0.733 | 55 | 3185.120 | 0.159 | PASS |
+| small_queue_backpressure | throttled_dma | 91.180 | 0.000 | 17.155 | 0.303 | 39 | 2235.660 | 0.135 | PASS |
+| small_queue_backpressure | backpressure_aware | 78.153 | 0.000 | 26.626 | 0.463 | 45 | 2425.690 | 0.134 | PASS |
+| throttled_dma_recovers_sla | round_robin | 445.420 | 0.528 | 46.666 | 0.747 | 79 | 20607.480 | 0.424 | PASS |
+| throttled_dma_recovers_sla | strict_priority | 429.420 | 0.528 | 46.656 | 0.747 | 79 | 21715.180 | 0.422 | PASS |
+| throttled_dma_recovers_sla | weighted_priority | 405.440 | 0.500 | 44.641 | 0.714 | 76 | 18658.900 | 0.387 | PASS |
+| throttled_dma_recovers_sla | throttled_dma | 123.640 | 0.000 | 46.666 | 0.747 | 44 | 5902.520 | 0.159 | PASS |
+| throttled_dma_recovers_sla | backpressure_aware | 237.684 | 0.194 | 36.390 | 0.574 | 60 | 10065.648 | 0.251 | PASS |
+| bursty_accel_tail_spike | round_robin | 799.520 | 0.583 | 46.160 | 0.998 | 101 | 52376.520 | 0.679 | PASS |
+| bursty_accel_tail_spike | strict_priority | 782.880 | 0.556 | 46.160 | 0.998 | 101 | 52586.080 | 0.668 | PASS |
+| bursty_accel_tail_spike | weighted_priority | 749.600 | 0.500 | 46.160 | 0.998 | 101 | 48542.240 | 0.650 | PASS |
+| bursty_accel_tail_spike | throttled_dma | 583.200 | 0.083 | 23.843 | 0.516 | 74 | 25582.740 | 0.245 | PASS |
+| bursty_accel_tail_spike | backpressure_aware | 553.386 | 0.111 | 36.981 | 0.787 | 89 | 29850.957 | 0.322 | PASS |
+
+## 11. Project AT-5: Architecture Recommendations
+
+- Project AT-5 recommendations separate QoS policy choices from capacity actions such as reducing memory service latency or increasing bounded queue capacity.
+
+Source: `examples/at/results/project_at5_backpressure_qos_collapse/project_at5_recommendations.csv`
+
+| case_name | primary_bottleneck | confidence | recommended_action | recommendation_priority | qos_policy_best | service_saturation_signal | backpressure_signal | sla_signal | claim_boundary |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline_balanced_rr | balanced_or_low_pressure | medium | no_single_dominant_action | low | round_robin | low | low | low | PASS |
+| strict_priority_helps_cpu | latency_sensitive_qos_contention | high | use_strict_priority | medium | strict_priority | medium | high | low | PASS |
+| strict_priority_starves_dma | strict_priority_starvation | high | use_weighted_priority | high | weighted_priority | low | high | low | PASS |
+| downstream_saturation_qos_collapse | downstream_service_saturation | high | reduce_memory_service_latency | high | backpressure_aware | high | high | high | PASS |
+| small_queue_backpressure | bounded_queue_backpressure | high | use_backpressure_aware_scheduling | high | backpressure_aware | medium | high | low | PASS |
+| throttled_dma_recovers_sla | dma_bulk_induced_backpressure | high | throttle_dma_bulk | high | throttled_dma | low | high | low | PASS |
+| bursty_accel_tail_spike | accel_burst_tail_spike | high | shape_accel_bursts | medium | throttled_dma | high | high | low | PASS |
+
+## 12. What This Evidence Pack Supports
 
 - workload bottleneck reasoning
 - evidence-driven memory architecture recommendation
@@ -125,8 +188,9 @@ Source: `examples/at/results/project_at4_cache_mshr_pressure/project_at4_recomme
 - QoS-like sensitivity discussion
 - SLA violation and recommendation discussion
 - locality, hit/miss trend, MSHR-like pressure, and shared-resource interference discussion
+- bounded queues, downstream saturation, backpressure propagation, and QoS collapse discussion
 - reproducible portfolio validation
 
-## 11. Claim Boundary
+## 13. Claim Boundary
 
 This evidence pack supports bounded architecture modeling discussion only. It does not claim AXI/CHI compliance, cycle accuracy, real NoC modeling, cache coherence modeling, silicon validation, production signoff, real DRAM timing, or real workload performance.

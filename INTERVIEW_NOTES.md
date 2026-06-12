@@ -17,8 +17,9 @@ workload → trace → metrics → sweep → comparison → demo
 
 I built a SystemC/TLM performance modeling portfolio. It starts with LT
 bottleneck characterization and evolves into AT transaction timing, contention,
-QoS-like sensitivity, and SLA violation analysis. The focus is early
-architecture reasoning before RTL, with explicit claim boundaries.
+QoS-like sensitivity, SLA violation analysis, cache-like MSHR pressure, and
+backpressure / QoS collapse analysis. The focus is early architecture reasoning
+before RTL, with explicit claim boundaries.
 
 ### 90-second pitch
 
@@ -34,9 +35,11 @@ exposes `BEGIN_REQ`、`END_REQ`、`BEGIN_RESP` 和 `END_RESP` timing. AT-2 compa
 multi-initiator arbitration policies and looks at fairness, back-pressure, and
 p95 / p99 tail latency. AT-3 adds QoS-like weight sensitivity, queue-depth and
 service-latency sweeps, SLA violation detection, and bounded recommendation
-output. The value is not that the model is a production interconnect; the value
-is that each claim is tied to reproducible traces, summaries, reports, and an
-explicit boundary.
+output. AT-4 adds cache-like shared-resource pressure, and AT-5 shows why QoS
+priority loses effectiveness when downstream service capacity is saturated. The
+value is not that the model is a production interconnect; the value is that each
+claim is tied to reproducible traces, summaries, reports, and an explicit
+boundary.
 
 ### Three interview bullets
 
@@ -61,7 +64,7 @@ tradeoffs reviewable and reproducible before RTL.
 
 ### Evidence bullets
 
-- Reproducible validation harness across K/L/AT-1/AT-2/AT-3.
+- Reproducible validation harness across K/L/AT-1/AT-2/AT-3/AT-4/AT-5.
 - Generated summary from CSV outputs, not hand-written claims.
 - Latency, throughput, fairness, back-pressure, and SLA metrics.
 - Explicit claim boundary.
@@ -347,6 +350,39 @@ cmake -S examples/at -B build-at \
   -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
 cmake --build build-at --target project_at4_cache_mshr_pressure -j
 python3 examples/at/tools/demo_at4_cache_mshr_pressure.py \
+  --at-build-dir build-at
+```
+
+### Project AT-5：Memory System Backpressure and QoS Collapse Lab
+
+Project AT-5 is an AT-level bottleneck isolation lab for downstream saturation
+and backpressure propagation. It connects AT-3 and AT-4: AT-3 shows QoS can
+help latency-sensitive traffic, AT-4 shows shared resource and MSHR-like
+pressure, and AT-5 shows QoS limits under downstream saturation.
+
+面试叙事重点可以这样讲：
+
+- `cpu_rt`、`dma_bulk`、`accel_burst` 代表三类 synthetic traffic，不代表真实产品 workload。
+- `ingress_queue_capacity` 和 `downstream_queue_capacity` 是 bounded queues，用来观察 queue-full 和 backpressure。
+- `service_utilization`、`saturation_ratio`、`backpressure_stall_ns` 和 `collapse_score` 用来判断 downstream service capacity 是否已经成为 dominant bottleneck。
+- priority is not magic; if the bottleneck is downstream service capacity, QoS can only redistribute pain。
+
+30-second pitch:
+
+> In AT-5, I model how downstream saturation creates backpressure and causes QoS policies to lose effectiveness. The key lesson is that priority can redistribute contention, but it cannot create downstream service capacity.
+
+Claim boundary:
+
+> This is not a real NoC, AXI/CHI, DRAM controller, cache coherence, or cycle-accurate model. It is an AT-level bottleneck isolation lab for trend comparison.
+
+复现命令：
+
+```bash
+cmake -S examples/at -B build-at \
+  -DUSER_SYSTEMC_INCLUDE_DIR=$HOME/local/systemc/include \
+  -DUSER_SYSTEMC_LIB_DIR=$HOME/local/systemc/lib
+cmake --build build-at --target project_at5_backpressure_qos_collapse -j
+python3 -B examples/at/tools/demo_at5_backpressure_qos_collapse.py \
   --at-build-dir build-at
 ```
 

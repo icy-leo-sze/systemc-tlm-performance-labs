@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 
-SCHEMA_VERSION = "p0.1"
+SCHEMA_VERSION = "p0.2"
 DEFAULT_OUTPUT = "docs/generated/portfolio_evidence_summary.md"
 
 
@@ -330,6 +330,76 @@ def specs() -> List[CsvSpec]:
                 "--at-build-dir build-at"
             ),
         ),
+        CsvSpec(
+            title="10. Project AT-5: Backpressure / QoS Collapse Summary",
+            path=Path(
+                "examples/at/results/project_at5_backpressure_qos_collapse/"
+                "project_at5_policy_sweep.csv"
+            ),
+            preferred_columns=(
+                "case_name",
+                "policy",
+                "cpu_rt_p95_ns",
+                "cpu_rt_sla_violation_ratio",
+                "system_throughput_txn_per_us",
+                "service_utilization",
+                "queue_full_events",
+                "backpressure_stall_ns",
+                "collapse_score",
+                "claim_boundary",
+            ),
+            reproduce_hint=(
+                "python3 -B examples/at/tools/demo_at5_backpressure_qos_collapse.py "
+                "--at-build-dir build-at"
+            ),
+            context_lines=(
+                (
+                    "Project AT-5 covers bounded queues and downstream saturation: "
+                    "`cpu_rt`, `dma_bulk`, and `accel_burst` contend for a shared "
+                    "downstream service under 5 synthetic QoS policies."
+                ),
+                (
+                    "It highlights backpressure propagation and QoS collapse: "
+                    "QoS alone can redistribute contention but cannot create "
+                    "downstream service capacity."
+                ),
+                (
+                    "PASS marker: `Project AT-5 Memory System Backpressure and "
+                    "QoS Collapse Lab PASS`; claim boundary remains bounded "
+                    "AT-level trend comparison only."
+                ),
+            ),
+        ),
+        CsvSpec(
+            title="11. Project AT-5: Architecture Recommendations",
+            path=Path(
+                "examples/at/results/project_at5_backpressure_qos_collapse/"
+                "project_at5_recommendations.csv"
+            ),
+            preferred_columns=(
+                "case_name",
+                "primary_bottleneck",
+                "confidence",
+                "recommended_action",
+                "recommendation_priority",
+                "qos_policy_best",
+                "service_saturation_signal",
+                "backpressure_signal",
+                "sla_signal",
+                "claim_boundary",
+            ),
+            reproduce_hint=(
+                "python3 -B examples/at/tools/demo_at5_backpressure_qos_collapse.py "
+                "--at-build-dir build-at"
+            ),
+            context_lines=(
+                (
+                    "Project AT-5 recommendations separate QoS policy choices from "
+                    "capacity actions such as reducing memory service latency or "
+                    "increasing bounded queue capacity."
+                ),
+            ),
+        ),
     ]
 
 
@@ -383,6 +453,7 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
         "- Project AT-2: multi-initiator arbitration and contention",
         "- Project AT-3: QoS-like sensitivity and SLA violation analysis",
         "- Project AT-4: cache-like shared-resource and MSHR pressure analysis",
+        "- Project AT-5: memory-system backpressure and QoS collapse analysis",
         "",
     ]
 
@@ -395,7 +466,7 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
 
     lines.extend(
         [
-            "## 10. What This Evidence Pack Supports",
+            "## 12. What This Evidence Pack Supports",
             "",
             "- workload bottleneck reasoning",
             "- evidence-driven memory architecture recommendation",
@@ -404,9 +475,10 @@ def render_document(root: Path) -> Tuple[str, List[Path]]:
             "- QoS-like sensitivity discussion",
             "- SLA violation and recommendation discussion",
             "- locality, hit/miss trend, MSHR-like pressure, and shared-resource interference discussion",
+            "- bounded queues, downstream saturation, backpressure propagation, and QoS collapse discussion",
             "- reproducible portfolio validation",
             "",
-            "## 11. Claim Boundary",
+            "## 13. Claim Boundary",
             "",
             (
                 "This evidence pack supports bounded architecture modeling discussion only. "
