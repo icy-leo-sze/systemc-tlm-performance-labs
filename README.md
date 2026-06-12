@@ -3,7 +3,8 @@
 这是一个边界清晰的 SystemC/TLM 早期 SoC 性能建模作品集，覆盖从 LT workload
 bottleneck analysis 到 AT transaction timing、arbitration、QoS-like sensitivity、
 SLA violation analysis、cache-like MSHR pressure、memory-system backpressure /
-QoS collapse，以及可复现 evidence packaging 的完整链路。
+QoS collapse、Stage 2 heterogeneous fabric / GPU-like throughput pressure，以及可复现
+evidence packaging 的完整链路。
 
 > 架构建模只有在 assumptions、metrics 和 claim boundaries 可见时才有价值。
 
@@ -37,12 +38,15 @@ schema_version=p0.3
 ```
 
 AT-6 is now part of the portfolio evidence harness as the first Stage 2 lab.
+AT-7 is implemented as the second independent Stage 2 lab, but it is not yet
+integrated into the portfolio evidence harness; Project V owns that integration.
 
 See:
 
 - [`docs/stage1_summary.md`](docs/stage1_summary.md)
 - [`docs/engineering_lessons.md`](docs/engineering_lessons.md)
 - [`docs/next_phase_roadmap.md`](docs/next_phase_roadmap.md)
+- [`docs/project_at7_gpu_like_throughput_saturation.md`](docs/project_at7_gpu_like_throughput_saturation.md)
 
 ## Next Phase
 
@@ -53,6 +57,11 @@ Stage 2 moves toward an industry-inspired architecture performance modeling road
 - AMBA-inspired NoC QoS and coherency-boundary exploration
 
 These are bounded AT-level synthetic models for architecture reasoning. They do not claim cycle accuracy, protocol compliance, silicon validation, or production signoff.
+
+Current Stage 2 status:
+
+- Project AT-6 is integrated into the portfolio evidence harness.
+- Project AT-7 is implemented as an independent lab and should be integrated by Project V.
 
 ## 从这里开始
 
@@ -75,6 +84,7 @@ These are bounded AT-level synthetic models for architecture reasoning. They do 
 - 展示 downstream saturation 下 backpressure propagation 和 QoS collapse。
 - AT-5 demonstrates that priority policies can redistribute contention but cannot create downstream service capacity.
 - 把 Stage 2 AT-6 纳入 evidence harness，用 heterogeneous SoC shared-memory fabric pressure 观察 mixed traffic interference、bandwidth partitioning 和 starvation risk。
+- 新增 Stage 2 AT-7 独立 lab，用 GPU-like throughput problem type 观察 outstanding-depth sensitivity、bandwidth saturation、latency hiding approximation、queue buildup 和 bandwidth wall。
 - 通过 validation harness 和 generated summary 形成可复现 evidence packaging。
 - 展示 architecture judgment：知道模型能支持什么，也知道模型不能支持什么。
 
@@ -91,6 +101,7 @@ These are bounded AT-level synthetic models for architecture reasoning. They do 
 | 7 | Project AT-5 | AT | downstream saturation 和 bounded queues 何时让 QoS policy 失效？ | policy sweep / recommendations |
 | 8 | Project P / S | Portfolio Evidence | 整条建模主线是否可审查、可复现？ | validation harness / generated evidence summary |
 | Stage 2 | Project AT-6 | AT | heterogeneous SoC shared-memory fabric pressure 如何影响 latency-sensitive 和 throughput-oriented traffic？ | summary / comparison / portfolio harness checks |
+| Stage 2 | Project AT-7 | AT | GPU-like throughput-oriented memory pressure 何时遇到 bandwidth wall？ | summary / comparison / independent lab output |
 
 ## 快速验证
 
@@ -102,6 +113,9 @@ python3 tools/run_portfolio_validation.py --at-build-dir build-at
 第二条 AT validation command 假设 `build-at` 已经完成 configure；harness 会使用
 明确的 named project targets 构建 AT-1/2/3/4/5，不依赖 legacy aggregate `at` target。
 Project U 后，harness 也构建并检查 Stage 2 `project_at6_heterogeneous_soc_fabric`。
+Project AT-7 当前不属于 portfolio harness；独立验证使用
+`project_at7_gpu_like_throughput_saturation` named target 和其生成的
+`summary.csv` / `comparison.md`。
 
 ## AT 构建参考
 
@@ -117,6 +131,7 @@ cmake --build build-at --target project_at3_qos_sensitivity_sla -j
 cmake --build build-at --target project_at4_cache_mshr_pressure -j
 cmake --build build-at --target project_at5_backpressure_qos_collapse -j
 cmake --build build-at --target project_at6_heterogeneous_soc_fabric -j
+cmake --build build-at --target project_at7_gpu_like_throughput_saturation -j
 ```
 
 ## Claim Boundary
@@ -158,6 +173,7 @@ cmake --build build-at --target project_at6_heterogeneous_soc_fabric -j
 | Project AT-4 | Cache-like Shared Resource and MSHR Pressure Lab | `examples/at/project_at4_cache_mshr_pressure.cpp`、`project_at4_summary.csv`、`project_at4_policy_sweep.csv`、`project_at4_recommendations.csv`、`project_at4_report.md` | Models locality, MSHR-like pressure, shared-resource interference, and diminishing returns at AT-level without claiming real cache coherence or cycle accuracy. |
 | Project AT-5 | Memory System Backpressure and QoS Collapse Lab | `examples/at/project_at5_backpressure_qos_collapse.cpp`、`project_at5_summary.csv`、`project_at5_policy_sweep.csv`、`project_at5_recommendations.csv`、`project_at5_report.md` | 分析 bounded queues、downstream saturation、backpressure propagation 和 QoS collapse；不是 real NoC、AXI/CHI、DRAM controller 或 cycle-accurate model |
 | Project AT-6 | Heterogeneous SoC Shared Memory Fabric Lab | `examples/at/project_at6_heterogeneous_soc_fabric.cpp`、`summary.csv`、`comparison.md` | Stage 2 independent lab；分析 bounded AT-level synthetic heterogeneous SoC shared-memory fabric pressure、bandwidth cap、latency-sensitive flow protection 和 starvation risk；不是 Apple Silicon simulation、real NoC behavior、cycle-accurate modeling、silicon validation 或 production signoff |
+| Project AT-7 | GPU-like Throughput Engine and Memory Saturation Lab | `examples/at/project_at7_gpu_like_throughput_saturation.cpp`、`summary.csv`、`comparison.md` | Stage 2 independent lab；分析 bounded AT-level synthetic GPU-like throughput pressure、outstanding-depth sensitivity、bandwidth saturation、latency hiding approximation、queue buildup 和 bandwidth wall；不是 NVIDIA GPU simulation、real GPU behavior、CUDA execution modeling、real HBM-controller behavior、cycle-accurate modeling、silicon validation 或 production signoff |
 | Project B / C | Normalized trace replay 和 gem5 SE-derived trace replay | normalized trace inputs、`summary.csv`、`comparison.md` | gem5 SE 只作为 offline trace context；`timestamp_ns` 是 normalized ordering hint，不是 gem5 timing |
 | Project D | Standalone C++ trace replay engine | C++ replay binary、Python vs C++ summary equivalence check | replay metric equivalence；不接 SystemC kernel，不做 live co-simulation |
 | Project E | Standalone C++ banked memory controller queueing model | queueing summary、tail latency、bank utilization、reject statistics | 用于 queueing 和 bank conflict reasoning 的 memory subsystem abstraction |
@@ -267,6 +283,13 @@ Project AT-5：
 ```bash
 python3 -B examples/at/tools/demo_at5_backpressure_qos_collapse.py \
   --at-build-dir build-at
+```
+
+Project AT-7：
+
+```bash
+cmake --build build-at --target project_at7_gpu_like_throughput_saturation -j
+./build-at/project_at7_gpu_like_throughput_saturation
 ```
 
 Headless regression harness：

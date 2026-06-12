@@ -71,18 +71,28 @@ Project U is implemented: AT-6 is integrated into the portfolio evidence harness
 
 ### Project AT-7: GPU-like Throughput Engine and Memory Saturation Lab
 
-Project AT-7 should build a GPU-like throughput traffic generator focused on memory saturation and latency hiding.
+Project AT-7 builds a GPU-like throughput traffic generator focused on memory saturation and latency hiding.
 
-It should observe:
+Status:
+
+```text
+independent lab implemented, not yet integrated into portfolio evidence harness
+```
+
+It observes:
 
 - occupancy-like outstanding request depth
 - memory bandwidth saturation
 - latency hiding
-- throughput collapse
+- throughput knee point
 - request burstiness
 - bandwidth wall
 
 This is not NVIDIA GPU simulation. It is an NVIDIA-like throughput problem type.
+
+Primary docs:
+
+- [`docs/project_at7_gpu_like_throughput_saturation.md`](project_at7_gpu_like_throughput_saturation.md)
 
 ### Project V: Integrate AT-7 into Evidence Harness
 
@@ -139,6 +149,8 @@ This is protocol-inspired exploration, not CHI / AXI / ACE compliance.
 
 ## Recommended Next Project
 
-The recommended next project is Project AT-6: Heterogeneous SoC Shared Memory Fabric Lab.
+The recommended next project is Project V: Integrate AT-7 into Evidence Harness.
 
-AT-6 is the most natural extension from the Stage 1 memory-system bottleneck portfolio. It also best demonstrates SoC architecture PM, performance modeling, and platform architecture thinking while staying within bounded AT-level synthetic architecture exploration.
+Project V should add Project AT-7 to the portfolio evidence harness with reproducible
+outputs, bounded validation checks, and explicit unsupported claims while keeping
+the portfolio schema and project list changes reviewable.
